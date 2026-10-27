@@ -1,0 +1,137 @@
+@implements IDisposable
+@inject IJSRuntime JS
+
+<div class="timer-card">
+    <div class="timer-head">
+        <span class="timer-label">@Etichetta</span>
+        <span class="timer-state @(Attivo ? "running" : Rimanenti == 0 ? "expired" : "")">
+            @(Attivo ? "In corso" : Rimanenti == 0 ? "Tempo scaduto" : "In pausa")
+        </span>
+    </div>
+
+    <div class="timer-display @(Rimanenti <= 10 && Rimanenti > 0 ? "urgent" : "")">@Formattato</div>
+
+    <div class="timer-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@Durata" aria-valuenow="@Rimanenti">
+        <div class="timer-bar-fill" style="width: @Percentuale%"></div>
+    </div>
+
+    <div class="timer-presets">
+        @foreach (var minuti in new[] { 2, 5, 10 })
+        {
+            <button type="button" class="chip @(Durata == minuti * 60 ? "chip-active" : "")"
+                    @onclick="() => Imposta(minuti)">
+                @minuti min
+            </button>
+        }
+    </div>
+
+    <div class="timer-controls">
+        <button type="button" class="btn btn-primary" @onclick="Toggle">
+            @(Attivo ? "Pausa" : "Avvia")
+        </button>
+        <button type="button" class="btn btn-ghost" @onclick="Reset">Reset</button>
+    </div>
+
+    <div class="timer-custom">
+        <label for="timer-minuti">Minuti</label>
+        <input id="timer-minuti" type="number" min="1" max="60" @bind="MinutiCustom" />
+        <button type="button" class="btn btn-ghost btn-sm" @onclick="ApplicaCustom">Imposta</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Etichetta { get; set; } = "Discussione";
+    [Parameter] public int DurataIniziale { get; set; } = 300;
+    [Parameter] public EventCallback<int> OnDurataCambiata { get; set; }
+
+    private int Durata { get; set; } = 300;
+    private int Rimanenti { get; set; } = 300;
+    private bool Attivo { get; set; }
+    private int MinutiCustom { get; set; } = 5;
+    private CancellationTokenSource? _cts;
+
+    private string Formattato => $"{Rimanenti / 60:00}:{Rimanenti % 60:00}";
+    private int Percentuale => Durata <= 0 ? 0 : (int)Math.Round(100.0 * Rimanenti / Durata);
+
+    protected override void OnInitialized()
+    {
+        Durata = Math.Max(1, DurataIniziale);
+        Rimanenti = Durata;
+        MinutiCustom = Math.Max(1, Durata / 60);
+    }
+
+    private void Toggle()
+    {
+        if (Attivo)
+        {
+            Ferma();
+            return;
+        }
+
+        if (Rimanenti <= 0) Rimanenti = Durata;
+        Attivo = true;
+        _cts = new CancellationTokenSource();
+        _ = EseguiAsync(_cts.Token);
+    }
+
+    private async Task EseguiAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested && Rimanenti > 0)
+            {
+                await Task.Delay(1000, token);
+                if (token.IsCancellationRequested) break;
+
+                await InvokeAsync(async () =>
+                {
+                    if (!Attivo) return;
+
+                    Rimanenti = Math.Max(0, Rimanenti - 1);
+
+                    if (Rimanenti == 0)
+                    {
+                        Attivo = false;
+                        await JS.InvokeVoidAsync("lupusStorage.beep");
+                    }
+
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Pausa o reset: uscita pulita.
+        }
+    }
+
+    private void Ferma()
+    {
+        Attivo = false;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    private void Reset()
+    {
+        Ferma();
+        Rimanenti = Durata;
+    }
+
+    private async Task Imposta(int minuti)
+    {
+        Ferma();
+        Durata = Math.Clamp(minuti, 1, 60) * 60;
+        Rimanenti = Durata;
+        MinutiCustom = Math.Clamp(minuti, 1, 60);
+        await OnDurataCambiata.InvokeAsync(Durata);
+    }
+
+    private Task ApplicaCustom() => Imposta(MinutiCustom);
+
+    public void Dispose()
+    {
+        Ferma();
+    }
+}

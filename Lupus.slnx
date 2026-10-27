@@ -1,3 +1,6 @@
 <Solution>
+  <Project Path="Lupus.Core.Tests/Lupus.Core.Tests.csproj" />
+  <Project Path="Lupus.Core/Lupus.Core.csproj" />
+  <Project Path="Lupus.Web/Lupus.Web.csproj" />
   <Project Path="Lupus/Lupus.csproj" />
 </Solution>

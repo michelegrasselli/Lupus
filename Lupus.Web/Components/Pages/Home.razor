@@ -1,0 +1,341 @@
+﻿@page "/"
+@inject PartitaService PartitaSvc
+@inject ArchivioPartita Archivio
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Lupus · Nuova partita</PageTitle>
+
+<div class="setup-page">
+    <header class="setup-hero">
+        <div class="hero-mark">🐺</div>
+        <div class="hero-copy">
+            <p class="eyebrow">Lupus in Tabula</p>
+            <h1>Assistente narratore</h1>
+            <p class="hero-sub">
+                Prepara la partita, gestisci le notti e lascia che il villaggio discuta.
+                Tutto in un'unica schermata, senza carta e senza appunti.
+            </p>
+        </div>
+        <div class="hero-stats">
+            <div><strong>@Ruoli.Tutti.Count</strong><span>ruoli</span></div>
+            <div><strong>@Preset.Tutti.Count</strong><span>preset</span></div>
+            <div><strong>@numeroGiocatori</strong><span>giocatori</span></div>
+        </div>
+    </header>
+
+    @if (partitaSalvata != null)
+    {
+        <div class="resume-banner">
+            <div class="resume-icon">💾</div>
+            <div class="resume-copy">
+                <strong>Partita salvata trovata</strong>
+                <span>
+                    @Testi.FaseBreve(partitaSalvata.Fase) · Turno @partitaSalvata.Turno ·
+                    @partitaSalvata.TotaleVivi vivi su @partitaSalvata.Giocatori.Count
+                </span>
+            </div>
+            <div class="resume-actions">
+                <button type="button" class="btn btn-primary" @onclick="Riprendi">Riprendi</button>
+                <button type="button" class="btn btn-ghost" @onclick="IgnoraSalvataggio">Ignora</button>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errore))
+    {
+        <div class="alert alert-error">@errore</div>
+    }
+
+    <div class="setup-grid">
+        <section class="setup-main">
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title">
+                        <span class="step-number">1</span>
+                        <div>
+                            <h2>Quanti giocatori?</h2>
+                            <p class="muted">Scegli un preset o imposta il numero manualmente.</p>
+                        </div>
+                    </div>
+                    <div class="player-count">
+                        <button type="button" class="icon-btn" @onclick="() => CambiaNumero(-1)" aria-label="Riduci giocatori">−</button>
+                        <input type="number" min="4" max="30" value="@numeroGiocatori" @onchange="OnNumeroChanged" aria-label="Numero di giocatori" />
+                        <button type="button" class="icon-btn" @onclick="() => CambiaNumero(1)" aria-label="Aumenta giocatori">+</button>
+                    </div>
+                </div>
+
+                <div class="preset-row">
+                    @foreach (var preset in Preset.Tutti)
+                    {
+                        <button type="button"
+                                class="preset-card @(presetAttivo == preset.Nome ? "active" : "")"
+                                @onclick="() => ApplicaPreset(preset)">
+                            <strong>@preset.Nome</strong>
+                            <span>@preset.Descrizione</span>
+                            <em>@preset.Totale giocatori</em>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title">
+                        <span class="step-number">2</span>
+                        <div>
+                            <h2>Composizione dei ruoli</h2>
+                            <p class="muted">Almeno un Lupo e più non-lupi che Lupi.</p>
+                        </div>
+                    </div>
+                    <div class="composition-total @(TotaleRuoli == numeroGiocatori ? "ok" : "ko")">
+                        @TotaleRuoli / @numeroGiocatori
+                    </div>
+                </div>
+
+                <div class="role-grid">
+                    @foreach (var info in Ruoli.Tutti)
+                    {
+                        var quantita = Quantita(info.Ruolo);
+                        <div class="role-card @(quantita > 0 ? "has-count" : "")" style="--accent: @info.Accento">
+                            <div class="role-card-icon">@info.Icona</div>
+                            <div class="role-card-body">
+                                <div class="role-card-title">
+                                    <strong>@info.Nome</strong>
+                                    <span class="alignment @(info.Buono ? "good" : "evil")">
+                                        @(info.Buono ? "Buono" : "Cattivo")
+                                    </span>
+                                </div>
+                                <p>@info.Descrizione</p>
+                            </div>
+                            <div class="role-counter">
+                                <button type="button" class="icon-btn" @onclick="() => CambiaRuolo(info.Ruolo, -1)"
+                                        disabled="@(quantita == 0)" aria-label="Rimuovi @info.Nome">−</button>
+                                <span>@quantita</span>
+                                <button type="button" class="icon-btn" @onclick="() => CambiaRuolo(info.Ruolo, 1)"
+                                        aria-label="Aggiungi @info.Nome">+</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title">
+                        <span class="step-number">3</span>
+                        <div>
+                            <h2>Nomi dei giocatori</h2>
+                            <p class="muted">I nomi devono essere unici. Puoi generarli automaticamente.</p>
+                        </div>
+                    </div>
+                    <div class="head-actions">
+                        <button type="button" class="btn btn-ghost btn-sm" @onclick="GeneraNomi">Genera nomi</button>
+                        <button type="button" class="btn btn-ghost btn-sm" @onclick="PulisciNomi">Svuota</button>
+                    </div>
+                </div>
+
+                <div class="names-grid">
+                    @for (int i = 0; i < nomi.Count; i++)
+                    {
+                        var entry = nomi[i];
+                        <label class="name-field" @key="entry">
+                            <span>@(i + 1)</span>
+                            <input @bind="entry.Nome" placeholder="Nome giocatore" maxlength="24" autocomplete="off" />
+                        </label>
+                    }
+                </div>
+
+                <label class="toggle">
+                    <input type="checkbox" @bind="assegnaCasualmente" />
+                    <span>Assegna i ruoli casualmente</span>
+                </label>
+            </div>
+        </section>
+
+        <aside class="setup-aside">
+            <div class="card summary-card">
+                <h2>Riepilogo</h2>
+
+                <div class="summary-row"><span>Giocatori</span><strong>@numeroGiocatori</strong></div>
+                <div class="summary-row"><span>Ruoli scelti</span><strong>@TotaleRuoli</strong></div>
+                <div class="summary-row"><span>Lupi</span><strong class="evil">@Lupi</strong></div>
+                <div class="summary-row"><span>Non lupi</span><strong class="good">@Altri</strong></div>
+
+                <div class="composition-bar" aria-hidden="true">
+                    <div class="bar-wolves" style="width: @PercentualeLupi%"></div>
+                    <div class="bar-others" style="width: @(100 - PercentualeLupi)%"></div>
+                </div>
+
+                @if (Errori.Count == 0)
+                {
+                    <div class="validation ok">Tutto pronto. Buonanotte...</div>
+                }
+                else
+                {
+                    <ul class="validation ko">
+                        @foreach (var e in Errori)
+                        {
+                            <li>@e</li>
+                        }
+                    </ul>
+                }
+
+                <button type="button" class="btn btn-primary btn-block" @onclick="Avvia" disabled="@(!PuoiAvviare)">
+                    Inizia la partita
+                </button>
+                <p class="micro">Salvataggio automatico nel browser. Nessun dato lascia il dispositivo.</p>
+            </div>
+
+            <div class="card info-card">
+                <h3>Come funziona</h3>
+                <ol class="how-list">
+                    <li>Prepara ruoli e nomi.</li>
+                    <li>Rivela il ruolo a ogni giocatore passando il dispositivo.</li>
+                    <li>Segui la notte: i ruoli vengono chiamati in ordine di priorità.</li>
+                    <li>All'alba annuncia i morti, poi gestisci voto e ballottaggio.</li>
+                </ol>
+            </div>
+        </aside>
+    </div>
+</div>
+
+@code {
+    private sealed class NomeEntry
+    {
+        public string Nome { get; set; } = "";
+    }
+
+    private int numeroGiocatori = 8;
+    private Dictionary<Ruolo, int> composizione = new();
+    private List<NomeEntry> nomi = new();
+    private bool assegnaCasualmente = true;
+    private string? presetAttivo;
+    private string? errore;
+    private Partita? partitaSalvata;
+
+    private int TotaleRuoli => composizione.Values.Sum();
+    private int Lupi => Quantita(Ruolo.Lupo);
+    private int Altri => TotaleRuoli - Lupi;
+    private int PercentualeLupi => TotaleRuoli == 0 ? 0 : (int)Math.Round(100.0 * Lupi / TotaleRuoli);
+
+    private List<string> Errori =>
+        CreazionePartita.Valida(numeroGiocatori, composizione, nomi.Select(n => n.Nome).ToList());
+
+    private bool PuoiAvviare => Errori.Count == 0;
+
+    protected override void OnInitialized()
+    {
+        var preset = Preset.Tutti.FirstOrDefault(p => p.Totale == 8) ?? Preset.Tutti[0];
+        ApplicaPreset(preset);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        partitaSalvata = await Archivio.CaricaAsync();
+        if (partitaSalvata != null)
+            StateHasChanged();
+    }
+
+    private int Quantita(Ruolo ruolo) => composizione.GetValueOrDefault(ruolo);
+
+    private void ApplicaPreset(PresetPartita preset)
+    {
+        numeroGiocatori = preset.Totale;
+        composizione = new Dictionary<Ruolo, int>(preset.Ruoli);
+        AggiornaNomi();
+        presetAttivo = preset.Nome;
+        errore = null;
+    }
+
+    private void CambiaNumero(int delta)
+    {
+        numeroGiocatori = Math.Clamp(numeroGiocatori + delta, 4, 30);
+        AggiornaNomi();
+    }
+
+    private void OnNumeroChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var valore))
+            numeroGiocatori = Math.Clamp(valore, 4, 30);
+        else
+            numeroGiocatori = Math.Clamp(numeroGiocatori, 4, 30);
+
+        AggiornaNomi();
+    }
+
+    private void AggiornaNomi()
+    {
+        numeroGiocatori = Math.Clamp(numeroGiocatori, 4, 30);
+
+        while (nomi.Count < numeroGiocatori)
+            nomi.Add(new NomeEntry { Nome = $"Giocatore {nomi.Count + 1}" });
+
+        while (nomi.Count > numeroGiocatori)
+            nomi.RemoveAt(nomi.Count - 1);
+
+        presetAttivo = null;
+    }
+
+    private void CambiaRuolo(Ruolo ruolo, int delta)
+    {
+        var attuale = Quantita(ruolo);
+        composizione[ruolo] = Math.Max(0, attuale + delta);
+        presetAttivo = null;
+        errore = null;
+    }
+
+    private void GeneraNomi()
+    {
+        for (int i = 0; i < nomi.Count; i++)
+            nomi[i].Nome = $"Giocatore {i + 1}";
+    }
+
+    private void PulisciNomi()
+    {
+        foreach (var entry in nomi)
+            entry.Nome = "";
+    }
+
+    private async Task Avvia()
+    {
+        errore = null;
+
+        if (Errori.Count > 0)
+        {
+            errore = Errori[0];
+            return;
+        }
+
+        try
+        {
+            var partita = CreazionePartita.Crea(
+                nomi.Select(n => n.Nome).ToList(),
+                composizione,
+                assegnaCasualmente);
+
+            PartitaSvc.Corrente = partita;
+            await Archivio.SalvaAsync(partita);
+            Nav.NavigateTo("/partita");
+        }
+        catch (Exception ex)
+        {
+            errore = ex.Message;
+        }
+    }
+
+    private void Riprendi()
+    {
+        if (partitaSalvata == null) return;
+        PartitaSvc.Corrente = partitaSalvata;
+        Nav.NavigateTo("/partita");
+    }
+
+    private async Task IgnoraSalvataggio()
+    {
+        await Archivio.CancellaAsync();
+        partitaSalvata = null;
+    }
+}

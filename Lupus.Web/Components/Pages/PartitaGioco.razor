@@ -1,0 +1,1266 @@
+@page "/partita"
+@inject PartitaService PartitaSvc
+@inject ArchivioPartita Archivio
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Lupus · @TitoloPagina</PageTitle>
+
+@if (caricamento)
+{
+    <div class="loading-page">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Caricamento della partita...</p>
+    </div>
+}
+else if (partita == null)
+{
+    <div class="empty-page">
+        <div class="empty-icon">🐺</div>
+        <h1>Nessuna partita in corso</h1>
+        <p class="muted">
+            Crea una nuova partita dalla schermata di preparazione oppure importa un salvataggio JSON.
+        </p>
+        <div class="empty-actions">
+            <a class="btn btn-primary" href="/">Torna alla preparazione</a>
+            <label class="btn btn-ghost file-btn">
+                Importa JSON
+                <InputFile OnChange="ImportaAsync" accept=".json,application/json" />
+            </label>
+        </div>
+    </div>
+}
+else
+{
+    var p = partita!;
+
+    <div class="game-page">
+        <header class="game-header">
+            <div class="game-brand">
+                <span class="brand-mark" aria-hidden="true">🐺</span>
+                <div>
+                    <p class="eyebrow">Lupus in Tabula</p>
+                    <h1>@TitoloFase</h1>
+                    <p class="muted small">@SottotitoloFase</p>
+                </div>
+            </div>
+
+            <div class="game-meta">
+                <span class="pill">Turno @p.Turno</span>
+                <span class="pill good">@p.AltriViviCount buoni</span>
+                <span class="pill evil">@p.LupiViviCount lupi</span>
+                <span class="pill">@p.TotaleVivi vivi</span>
+            </div>
+
+            <div class="game-actions">
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="ApriModaleRuoli">Rivela ruoli</button>
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="ToggleMostraRuoli">
+                    @(mostraRuoli ? "Nascondi ruoli" : "Mostra ruoli")
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="SalvaManuale" disabled="@salvataggioInCorso">Salva</button>
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="Esporta">Esporta</button>
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="NuovaPartita">Nuova</button>
+            </div>
+        </header>
+
+        <nav class="phase-timeline" aria-label="Fasi della partita">
+            @foreach (var fase in Fasi)
+            {
+                <span class="phase-step @ClasseFase(fase)">
+                    <span class="phase-dot" aria-hidden="true"></span>
+                    @Testi.FaseBreve(fase)
+                </span>
+            }
+        </nav>
+
+        @if (!string.IsNullOrWhiteSpace(errore))
+        {
+            <div class="alert alert-error">
+                <span>@errore</span>
+                <button type="button" class="alert-close" @onclick="ChiudiErrore" aria-label="Chiudi messaggio">✕</button>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(avviso))
+        {
+            <div class="alert alert-info">
+                <span>@avviso</span>
+                <button type="button" class="alert-close" @onclick="ChiudiAvviso" aria-label="Chiudi messaggio">✕</button>
+            </div>
+        }
+
+        <div class="game-grid">
+            <main class="game-main">
+                @if (p.Fase == FasePartita.NotteIntro)
+                {
+                    <div class="card intro-card">
+                        <div class="stage-head">
+                            <div class="stage-icon">🌙</div>
+                            <div>
+                                <p class="eyebrow">Turno @p.Turno</p>
+                                <h2>Preparazione della notte</h2>
+                                <p class="muted">Rivela il ruolo a ogni giocatore, poi chiama il villaggio a dormire.</p>
+                            </div>
+                        </div>
+
+                        <div class="composition-pills">
+                            @foreach (var gruppo in Composizione.OrderBy(g => Ruoli.Info(g.Key).Priorita))
+                            {
+                                var info = Ruoli.Info(gruppo.Key);
+                                <span class="composition-pill" style="--accent: @info.Accento">
+                                    @info.Icona @info.Nome <strong>x@(gruppo.Count())</strong>
+                                </span>
+                            }
+                        </div>
+
+                        <div class="stage-actions">
+                            <button type="button" class="btn btn-ghost" @onclick="ApriModaleRuoli">Rivela i ruoli</button>
+                            <button type="button" class="btn btn-primary" @onclick="IniziaNotte">Inizia la notte</button>
+                        </div>
+
+                        <div class="narrator-box">
+                            <strong>Solo narratore</strong>
+                            <p>Composizione: @ComposizioneTesto</p>
+                            @if (p.Capobranco is { } capo)
+                            {
+                                <p>Capobranco: @capo.Nome</p>
+                            }
+                            <p>Lupi vivi: @p.LupiViviCount · Non lupi vivi: @p.AltriViviCount</p>
+                        </div>
+                    </div>
+                }
+                else if (p.Fase == FasePartita.Notte)
+                {
+                    @if (p.PassoCorrente is { } passo)
+                    {
+                        <div class="card step-card">
+                            <div class="step-progress">
+                                <span>Passo @(PassiCompletati + 1) di @PassiTotali</span>
+                                <div class="step-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@PassiTotali" aria-valuenow="@PassiCompletati">
+                                    <div style="width: @PercentualePassi%"></div>
+                                </div>
+                            </div>
+
+                            <div class="stage-head">
+                                <div class="stage-icon">@IconaPasso(passo)</div>
+                                <div>
+                                    <p class="eyebrow">@(passo.Tipo == TipoPasso.Capobranco ? "Elezioni" : "Azione notturna")</p>
+                                    <h2>@passo.Titolo</h2>
+                                    <p class="muted">@passo.Istruzione</p>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(passo.Risultato) && !passo.Completato)
+                            {
+                                <div class="result-panel">
+                                    <strong>Risultato</strong>
+                                    <p>@passo.Risultato</p>
+                                </div>
+                                <div class="stage-actions">
+                                    <button type="button" class="btn btn-primary" @onclick="ConfermaRisultato">Conferma e prosegui</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <PlayerPicker Giocatori="GiocatoriPasso"
+                                              SelezionatoId="@selezionatoId"
+                                              OnSeleziona="Seleziona"
+                                              MostraRuoli="mostraRuoli" />
+
+                                <div class="stage-actions">
+                                    <button type="button" class="btn btn-primary" @onclick="EseguiPasso" disabled="@(selezionatoId == null)">
+                                        Conferma scelta
+                                    </button>
+                                    @if (passo.Tipo == TipoPasso.Capobranco)
+                                    {
+                                        <span class="muted small">Scegli un Lupo vivo: sarà il nuovo capobranco.</span>
+                                    }
+                                    else if (selezionatoId != null)
+                                    {
+                                        <span class="muted small">Bersaglio: <strong>@p.NomeDi(selezionatoId)</strong></span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="card complete-card">
+                            <div class="stage-head">
+                                <div class="stage-icon">🌙</div>
+                                <div>
+                                    <p class="eyebrow">Notte @p.Turno</p>
+                                    <h2>Tutte le azioni sono registrate</h2>
+                                    <p class="muted">Controlla il riepilogo e risolvi la notte.</p>
+                                </div>
+                            </div>
+                            <div class="stage-actions">
+                                <button type="button" class="btn btn-primary" @onclick="RisolviNotte">Risolvi la notte</button>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="card night-log-card">
+                        <div class="card-head compact">
+                            <h2>Azioni di questa notte</h2>
+                            <span class="muted">@PassiCompletati / @PassiTotali</span>
+                        </div>
+
+                        @if (p.PassiNotte.Count == 0)
+                        {
+                            <p class="empty-state">Nessuna azione prevista per questa notte.</p>
+                        }
+                        else
+                        {
+                            <div class="step-list">
+                                @foreach (var s in p.PassiNotte)
+                                {
+                                    <div class="step-row @(s.Completato ? "done" : s == p.PassoCorrente ? "current" : "todo")">
+                                        <span class="step-row-icon">@IconaPasso(s)</span>
+                                        <div class="step-row-body">
+                                            <strong>@s.Titolo</strong>
+                                            @if (!string.IsNullOrWhiteSpace(s.Risultato))
+                                            {
+                                                <p>@s.Risultato</p>
+                                            }
+                                            else
+                                            {
+                                                <p class="muted">@(s.Completato ? "Completato" : "In attesa")</p>
+                                            }
+                                        </div>
+                                        <span class="step-row-state" aria-hidden="true">@(s.Completato ? "✓" : "…")</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else if (p.Fase == FasePartita.Alba)
+                {
+                    <div class="card dawn-card">
+                        <div class="stage-head">
+                            <div class="stage-icon">🌅</div>
+                            <div>
+                                <p class="eyebrow">Turno @p.Turno</p>
+                                <h2>Alba</h2>
+                                <p class="muted">Annuncia al villaggio cosa è successo stanotte.</p>
+                            </div>
+                        </div>
+
+                        @if (Risultato == null)
+                        {
+                            <p class="muted">Nessun report disponibile per questa notte.</p>
+                        }
+                        else
+                        {
+                            <div class="dawn-events">
+                                @foreach (var ev in EventiPubblici)
+                                {
+                                    <div class="event-row">@ev.Testo</div>
+                                }
+                            </div>
+
+                            @if (MortiNotte.Count > 0)
+                            {
+                                <h3 class="section-title">I caduti della notte</h3>
+                                <div class="dawn-deaths">
+                                    @foreach (var morto in MortiNotte)
+                                    {
+                                        <div class="death-card" style="--accent: @Ruoli.Info(morto.Ruolo).Accento">
+                                            <span class="avatar">@morto.Iniziali</span>
+                                            <div>
+                                                <strong>@morto.Nome</strong>
+                                                <span class="role-chip" style="--accent: @Ruoli.Info(morto.Ruolo).Accento">
+                                                    @Ruoli.Info(morto.Ruolo).Icona @Ruoli.Nome(morto.Ruolo)
+                                                </span>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            @if (Gufati.Count > 0)
+                            {
+                                <div class="info-banner">
+                                    🦉 Il Gufo ha mandato al ballottaggio: <strong>@NomiGufati</strong>.
+                                </div>
+                            }
+
+                            @if (EventiRiservati.Any())
+                            {
+                                <div class="narrator-box">
+                                    <strong>Solo narratore</strong>
+                                    @foreach (var ev in EventiRiservati)
+                                    {
+                                        <p>@ev.Testo</p>
+                                    }
+                                </div>
+                            }
+                        }
+
+                        <div class="stage-actions">
+                            <button type="button" class="btn btn-primary" @onclick="VaiAlGiorno">
+                                @(p.Esito == null ? "Vai alla discussione" : "Vedi il risultato finale")
+                            </button>
+                        </div>
+                    </div>
+                }
+                else if (p.Fase == FasePartita.Giorno)
+                {
+                    <div class="card">
+                        <div class="stage-head">
+                            <div class="stage-icon">☀️</div>
+                            <div>
+                                <p class="eyebrow">Turno @p.Turno</p>
+                                <h2>Il villaggio discute</h2>
+                                <p class="muted">Ascolta gli accusi, gestisci il timer e quando siete pronti aprite il voto.</p>
+                            </div>
+                        </div>
+
+                        <div class="alive-strip">
+                            @foreach (var g in GiocatoriVivi)
+                            {
+                                <span class="alive-chip" style="--accent: @Ruoli.Info(g.Ruolo).Accento">
+                                    <span class="avatar">@g.Iniziali</span>
+                                    @g.Nome
+                                    @if (g.Capobranco && mostraRuoli)
+                                    {
+                                        <span title="Capobranco">👑</span>
+                                    }
+                                </span>
+                            }
+                        </div>
+
+                        @if (Gufati.Count > 0)
+                        {
+                            <div class="info-banner">
+                                🦉 Al ballottaggio oggi: <strong>@NomiGufati</strong>.
+                            </div>
+                        }
+
+                        <div class="stage-actions">
+                            <button type="button" class="btn btn-primary" @onclick="ApriVoto">Apri il voto</button>
+                        </div>
+                    </div>
+                }
+                else if (p.Fase == FasePartita.Voto)
+                {
+                    <div class="card vote-card">
+                        <div class="stage-head">
+                            <div class="stage-icon">🗳️</div>
+                            <div>
+                                <p class="eyebrow">Turno @p.Turno</p>
+                                <h2>Chi va al rogo?</h2>
+                                <p class="muted">Raccogli il voto del villaggio. Se il Gufo ha mandato qualcuno al ballottaggio, si aprirà il ballottaggio.</p>
+                            </div>
+                        </div>
+
+                        @if (Gufati.Count > 0)
+                        {
+                            <div class="info-banner">
+                                🦉 Candidati dal Gufo: <strong>@NomiGufati</strong>.
+                            </div>
+                        }
+
+                        <PlayerPicker Giocatori="GiocatoriVivi"
+                                      SelezionatoId="@selezionatoId"
+                                      OnSeleziona="Seleziona"
+                                      MostraRuoli="mostraRuoli" />
+
+                        <div class="stage-actions">
+                            <button type="button" class="btn btn-primary" @onclick="Vota" disabled="@(selezionatoId == null)">
+                                Conferma il voto
+                            </button>
+                            @if (selezionatoId != null)
+                            {
+                                <span class="muted small">Voto selezionato: <strong>@p.NomeDi(selezionatoId)</strong></span>
+                            }
+                        </div>
+                    </div>
+                }
+                else if (p.Fase == FasePartita.Ballottaggio)
+                {
+                    <div class="card ballot-card">
+                        <div class="stage-head">
+                            <div class="stage-icon">⚖️</div>
+                            <div>
+                                <p class="eyebrow">Turno @p.Turno</p>
+                                <h2>Ballottaggio</h2>
+                                <p class="muted">Scegli chi va al rogo tra i candidati.</p>
+                            </div>
+                        </div>
+
+                        <div class="ballot-candidates">
+                            @foreach (var g in GiocatoriBallottaggio)
+                            {
+                                <span class="candidate-chip" style="--accent: @Ruoli.Info(g.Ruolo).Accento">
+                                    @Ruoli.Info(g.Ruolo).Icona @g.Nome
+                                </span>
+                            }
+                        </div>
+
+                        <PlayerPicker Giocatori="GiocatoriBallottaggio"
+                                      SelezionatoId="@selezionatoId"
+                                      OnSeleziona="Seleziona"
+                                      MostraRuoli="mostraRuoli" />
+
+                        <div class="stage-actions">
+                            <button type="button" class="btn btn-primary" @onclick="ScegliBallottaggio" disabled="@(selezionatoId == null)">
+                                Manda al rogo
+                            </button>
+                        </div>
+                    </div>
+                }
+                else if (p.Fase == FasePartita.Esecuzione)
+                {
+                    <div class="card">
+                        <div class="stage-head">
+                            <div class="stage-icon">🔥</div>
+                            <div>
+                                <p class="eyebrow">Turno @p.Turno</p>
+                                <h2>Il rogo è concluso</h2>
+                                <p class="muted">Annuncia il ruolo del condannato, poi prepara la prossima notte.</p>
+                            </div>
+                        </div>
+
+                        @if (UltimoRogo is { } rogo)
+                        {
+                            <div class="execution-card" style="--accent: @Ruoli.Info(rogo.Ruolo).Accento">
+                                <span class="avatar">@rogo.Iniziali</span>
+                                <div>
+                                    <p class="eyebrow">Condannato</p>
+                                    <h3>@rogo.Nome</h3>
+                                    <span class="role-chip" style="--accent: @Ruoli.Info(rogo.Ruolo).Accento">
+                                        @Ruoli.Info(rogo.Ruolo).Icona @Ruoli.Nome(rogo.Ruolo)
+                                    </span>
+                                </div>
+                                <button type="button" class="btn btn-ghost btn-sm" @onclick="() => ApriRivelazione(rogo)">Rivela ruolo</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="muted">Nessun condannato registrato per questo turno.</p>
+                        }
+
+                        <div class="alive-strip">
+                            @foreach (var g in GiocatoriVivi)
+                            {
+                                <span class="alive-chip" style="--accent: @Ruoli.Info(g.Ruolo).Accento">
+                                    <span class="avatar">@g.Iniziali</span>
+                                    @g.Nome
+                                </span>
+                            }
+                        </div>
+
+                        <div class="stage-actions">
+                            <button type="button" class="btn btn-primary" @onclick="ProssimaNotte">Cala la notte</button>
+                        </div>
+                    </div>
+                }
+                else if (p.Fase == FasePartita.Finita)
+                {
+                    <section class="winner-panel @Testi.ClasseVittoria(p.Esito)">
+                        <div class="winner-icon">@Testi.IconaVittoria(p.Esito)</div>
+                        <p class="eyebrow">Partita conclusa</p>
+                        <h2>@Testi.TitoloVittoria(p.Esito)</h2>
+                        <p>@Testi.SottotitoloVittoria(p.Esito)</p>
+                        <div class="winner-stats">
+                            <div><strong>@p.Turno</strong><span>turni</span></div>
+                            <div><strong>@p.Giocatori.Count</strong><span>giocatori</span></div>
+                            <div><strong>@p.TotaleVivi</strong><span>superstiti</span></div>
+                        </div>
+                        <div class="winner-actions">
+                            <button type="button" class="btn btn-primary" @onclick="NuovaPartita">Nuova partita</button>
+                            <button type="button" class="btn btn-ghost" @onclick="Esporta">Esporta riepilogo</button>
+                        </div>
+                    </section>
+
+                    <div class="card">
+                        <div class="card-head compact">
+                            <h2>Riepilogo finale</h2>
+                            <span class="muted">@p.TotaleVivi vivi / @p.Giocatori.Count</span>
+                        </div>
+                        <div class="final-grid">
+                            @foreach (var g in p.Giocatori.OrderByDescending(x => x.Vivo).ThenBy(x => x.Nome))
+                            {
+                                <div class="final-player @(g.Vivo ? "" : "dead")" style="--accent: @Ruoli.Info(g.Ruolo).Accento">
+                                    <span class="avatar">@g.Iniziali</span>
+                                    <div class="final-player-body">
+                                        <span class="final-player-name">@g.Nome @(g.Vivo ? "" : "✝")</span>
+                                        <span class="role-chip" style="--accent: @Ruoli.Info(g.Ruolo).Accento">
+                                            @Ruoli.Info(g.Ruolo).Icona @Ruoli.Nome(g.Ruolo)
+                                        </span>
+                                    </div>
+                                    @if (g.Capobranco)
+                                    {
+                                        <span title="Capobranco">👑</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </main>
+
+            <aside class="game-aside">
+                <TimerCountdown @key="TimerKey"
+                                Etichetta="@EtichettaTimer"
+                                DurataIniziale="@p.TimerSecondi"
+                                OnDurataCambiata="AggiornaDurataTimer" />
+
+                <div class="card players-card">
+                    <div class="card-head compact">
+                        <h2>Giocatori</h2>
+                        <span class="muted">@p.TotaleVivi vivi / @p.Giocatori.Count</span>
+                    </div>
+
+                    <div class="player-list">
+                        @foreach (var g in p.Giocatori.OrderByDescending(x => x.Vivo).ThenBy(x => x.Nome))
+                        {
+                            <button type="button" class="player-row @(g.Vivo ? "" : "dead")" @onclick="() => ApriRivelazione(g)">
+                                <span class="avatar" style="--accent: @Ruoli.Info(g.Ruolo).Accento">@g.Iniziali</span>
+                                <span class="player-row-body">
+                                    <span class="player-row-name">@g.Nome</span>
+                                    @if (mostraRuoli)
+                                    {
+                                        <span class="role-chip" style="--accent: @Ruoli.Info(g.Ruolo).Accento">
+                                            @Ruoli.Info(g.Ruolo).Icona @Ruoli.Nome(g.Ruolo)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="player-row-hint">@(g.Vivo ? "tocca per rivelare" : "fuori gioco")</span>
+                                    }
+                                </span>
+                                <span class="player-row-badges">
+                                    @if (mostraRuoli && g.Capobranco)
+                                    {
+                                        <span title="Capobranco">👑</span>
+                                    }
+                                    @if (mostraRuoli && g.Trasformato)
+                                    {
+                                        <span title="Trasformato">🎭</span>
+                                    }
+                                    @if (mostraRuoli && g.DiavoloSbranato)
+                                    {
+                                        <span title="Diavolo sbranato">😈</span>
+                                    }
+                                    @if (mostraRuoli && g.TrappolaInCooldown)
+                                    {
+                                        <span title="Trappola in cooldown">🪤</span>
+                                    }
+                                    @if (!g.Vivo)
+                                    {
+                                        <span title="Morto">✝</span>
+                                    }
+                                </span>
+                            </button>
+                        }
+                    </div>
+
+                    <button type="button" class="btn btn-ghost btn-block btn-sm" @onclick="ApriModaleRuoli">
+                        Rivela ruoli ai giocatori
+                    </button>
+                </div>
+
+                <div class="card log-card">
+                    <div class="card-head compact">
+                        <h2>Diario</h2>
+                        <span class="muted">@p.Log.Count voci</span>
+                    </div>
+
+                    <div class="log-filters">
+                        @foreach (var f in FiltriLog)
+                        {
+                            <button type="button" class="log-filter @(filtroLog == f.Chiave ? "active" : "")"
+                                    @onclick="() => ImpostaFiltro(f.Chiave)">
+                                @f.Etichetta
+                            </button>
+                        }
+                    </div>
+
+                    <div class="log-list">
+                        @if (!LogFiltrato.Any())
+                        {
+                            <p class="empty-state">Nessuna voce per questo filtro.</p>
+                        }
+                        @foreach (var voce in LogFiltrato)
+                        {
+                            <div class="log-entry @ClasseLog(voce.Tipo)">
+                                <span class="log-turn">T@(voce.Turno)</span>
+                                <div>
+                                    <p>@voce.Testo</p>
+                                    <span class="log-meta">@Testi.FaseBreve(voce.Fase) · @voce.Ora.ToString("HH:mm")</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="card save-card">
+                    <div class="card-head compact">
+                        <h2>Salvataggio</h2>
+                        <span class="muted">@(salvataggioInCorso ? "In corso..." : "Auto")</span>
+                    </div>
+
+                    <p class="muted small">
+                        @if (ultimoSalvataggio is { } salvata)
+                        {
+                            <text>Ultimo salvataggio: @salvata.ToString("HH:mm:ss")</text>
+                        }
+                        else
+                        {
+                            <text>Salvataggio automatico attivo.</text>
+                        }
+                    </p>
+
+                    <div class="save-actions">
+                        <button type="button" class="btn btn-ghost btn-block" @onclick="SalvaManuale" disabled="@salvataggioInCorso">
+                            Salva ora
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-block" @onclick="Esporta">Esporta JSON</button>
+                        <label class="btn btn-ghost btn-block file-btn">
+                            Importa JSON
+                            <InputFile OnChange="ImportaAsync" accept=".json,application/json" />
+                        </label>
+                        <button type="button" class="btn btn-danger btn-block" @onclick="NuovaPartita">Abbandona partita</button>
+                    </div>
+
+                    <p class="micro">I dati restano nel browser. Esporta il JSON per un backup o per cambiare dispositivo.</p>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    @if (mostraModaleRuolo)
+    {
+        <div class="modal-backdrop" @onclick="ChiudiModale">
+            <div class="modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Rivelazione ruoli">
+                <div class="modal-head">
+                    <div>
+                        <p class="eyebrow">Solo narratore</p>
+                        <h2>Rivelazione ruoli</h2>
+                    </div>
+                    <button type="button" class="icon-btn" @onclick="ChiudiModale" aria-label="Chiudi">✕</button>
+                </div>
+
+                @if (giocatoreRivelato == null)
+                {
+                    <p class="muted">Passa il dispositivo a un giocatore e tocca il suo nome. Poi chiedigli di nascondere lo schermo.</p>
+                    <div class="reveal-list">
+                        @foreach (var g in p.Giocatori)
+                        {
+                            <button type="button" class="reveal-player @(Rivelato(g) ? "revealed" : "")" @onclick="() => RivelaGiocatore(g)">
+                                <span class="avatar">@g.Iniziali</span>
+                                <span>@g.Nome</span>
+                                <span>@(Rivelato(g) ? "✓ visto" : "Rivela")</span>
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    var info = Ruoli.Info(giocatoreRivelato.Ruolo);
+                    <div class="reveal-card" style="--accent: @info.Accento">
+                        <span class="reveal-icon">@info.Icona</span>
+                        <p class="eyebrow">@giocatoreRivelato.Nome</p>
+                        <h2>@info.Nome</h2>
+                        <span class="alignment @(info.Buono ? "good" : "evil")">@Ruoli.Fazione(giocatoreRivelato.Ruolo)</span>
+                        <p>@info.Descrizione</p>
+                        @if (giocatoreRivelato.Capobranco)
+                        {
+                            <span class="badge">👑 Capobranco</span>
+                        }
+                        @if (giocatoreRivelato.Trasformato && giocatoreRivelato.RuoloIniziale is { } iniziale)
+                        {
+                            <span class="badge">🎭 Era @Ruoli.Nome(iniziale)</span>
+                        }
+                        <button type="button" class="btn btn-primary" @onclick="ChiudiRivelazione">Nascondi e torna alla lista</button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private static readonly FasePartita[] Fasi =
+    {
+        FasePartita.NotteIntro,
+        FasePartita.Notte,
+        FasePartita.Alba,
+        FasePartita.Giorno,
+        FasePartita.Voto,
+        FasePartita.Ballottaggio,
+        FasePartita.Esecuzione,
+        FasePartita.Finita
+    };
+
+    private static readonly (string Chiave, string Etichetta)[] FiltriLog =
+    {
+        ("tutto", "Tutto"),
+        ("notte", "Notte"),
+        ("voti", "Voti"),
+        ("morti", "Morti")
+    };
+
+    private Partita? partita;
+    private bool caricamento = true;
+    private bool mostraRuoli;
+    private bool mostraModaleRuolo;
+    private Giocatore? giocatoreRivelato;
+    private readonly HashSet<string> ruoliRivelati = new();
+    private string? selezionatoId;
+    private string? errore;
+    private string? avviso;
+    private bool salvataggioInCorso;
+    private DateTime? ultimoSalvataggio;
+    private string filtroLog = "tutto";
+    private int timerReset;
+    private int logCountPrecedente = -1;
+
+    private string TitoloPagina => partita == null ? "Partita" : $"Turno {partita.Turno}";
+
+    private string TitoloFase
+    {
+        get
+        {
+            if (partita == null) return "Partita";
+            return partita.Fase switch
+            {
+                FasePartita.NotteIntro => "Preparazione della notte",
+                FasePartita.Notte => $"Notte {partita.Turno}",
+                FasePartita.Alba => "Alba",
+                FasePartita.Giorno => "Discussione",
+                FasePartita.Voto => "Votazione",
+                FasePartita.Ballottaggio => "Ballottaggio",
+                FasePartita.Esecuzione => "Fine del turno",
+                FasePartita.Finita => Testi.TitoloVittoria(partita.Esito),
+                _ => "Partita"
+            };
+        }
+    }
+
+    private string SottotitoloFase
+    {
+        get
+        {
+            if (partita == null) return "";
+            return partita.Fase switch
+            {
+                FasePartita.NotteIntro => "Rivela i ruoli, poi chiama il villaggio a dormire.",
+                FasePartita.Notte => "Segui i passi in ordine di priorità. Il narratore vede tutto.",
+                FasePartita.Alba => "Annuncia i morti e gli eventi pubblici.",
+                FasePartita.Giorno => "Il villaggio discute. Usa il timer per tenere il ritmo.",
+                FasePartita.Voto => "Raccogli il voto del villaggio.",
+                FasePartita.Ballottaggio => "Scegli tra i candidati mandati al ballottaggio.",
+                FasePartita.Esecuzione => "Il rogo è concluso. Prepara la prossima notte.",
+                FasePartita.Finita => Testi.SottotitoloVittoria(partita.Esito),
+                _ => ""
+            };
+        }
+    }
+
+    private string EtichettaTimer
+    {
+        get
+        {
+            if (partita == null) return "Timer";
+            return partita.Fase switch
+            {
+                FasePartita.Notte => "Azioni notturne",
+                FasePartita.Giorno => "Discussione",
+                FasePartita.Voto => "Votazione",
+                FasePartita.Ballottaggio => "Ballottaggio",
+                _ => "Timer"
+            };
+        }
+    }
+
+    private string TimerKey => $"{partita?.Id}-{partita?.Turno}-{partita?.Fase}-{timerReset}";
+
+    private int PassiTotali => partita?.PassiNotte.Count ?? 0;
+
+    private int PassiCompletati => partita?.PassiNotte.Count(x => x.Completato) ?? 0;
+
+    private int PercentualePassi => PassiTotali == 0
+        ? 0
+        : (int)Math.Round(100.0 * PassiCompletati / PassiTotali);
+
+    private RisultatoNotte? Risultato => partita?.RisultatoNotte;
+
+    private Giocatore? UltimoRogo => partita == null ? null : partita.Giocatore(partita.UltimoRogoId);
+
+    private IEnumerable<IGrouping<Ruolo, Giocatore>> Composizione
+    {
+        get
+        {
+            if (partita == null) return Enumerable.Empty<IGrouping<Ruolo, Giocatore>>();
+            return partita.Giocatori.GroupBy(g => g.Ruolo);
+        }
+    }
+
+    private string ComposizioneTesto
+    {
+        get
+        {
+            if (partita == null) return "";
+            return string.Join(" · ", partita.Giocatori
+                .GroupBy(g => g.Ruolo)
+                .OrderBy(g => Ruoli.Info(g.Key).Priorita)
+                .Select(g => $"{Ruoli.Nome(g.Key)} x{g.Count()}"));
+        }
+    }
+
+    private List<Giocatore> GiocatoriVivi
+    {
+        get
+        {
+            if (partita == null) return new();
+            return partita.Vivi.OrderBy(g => g.Nome).ToList();
+        }
+    }
+
+    private List<Giocatore> GiocatoriPasso
+    {
+        get
+        {
+            if (partita == null || partita.PassoCorrente is not { } passo) return new();
+            return passo.OpzioniIds
+                .Select(id => partita.Giocatore(id))
+                .OfType<Giocatore>()
+                .ToList();
+        }
+    }
+
+    private List<Giocatore> GiocatoriBallottaggio
+    {
+        get
+        {
+            if (partita == null) return new();
+            return partita.BallottaggioIds
+                .Select(id => partita.Giocatore(id))
+                .OfType<Giocatore>()
+                .Where(g => g.Vivo)
+                .ToList();
+        }
+    }
+
+    private List<Giocatore> Gufati
+    {
+        get
+        {
+            if (partita == null) return new();
+            return partita.BallottaggioIds
+                .Select(id => partita.Giocatore(id))
+                .OfType<Giocatore>()
+                .Where(g => g.Vivo)
+                .ToList();
+        }
+    }
+
+    private string NomiGufati => string.Join(", ", Gufati.Select(g => g.Nome));
+
+    private List<Giocatore> MortiNotte
+    {
+        get
+        {
+            if (partita == null || partita.RisultatoNotte == null) return new();
+            return partita.RisultatoNotte.MortiIds
+                .Select(id => partita.Giocatore(id))
+                .OfType<Giocatore>()
+                .ToList();
+        }
+    }
+
+    private IEnumerable<EventoNotte> EventiPubblici
+    {
+        get
+        {
+            if (partita == null || partita.RisultatoNotte == null) return Enumerable.Empty<EventoNotte>();
+            return partita.RisultatoNotte.Eventi.Where(e => !e.Riservato);
+        }
+    }
+
+    private IEnumerable<EventoNotte> EventiRiservati
+    {
+        get
+        {
+            if (partita == null || partita.RisultatoNotte == null) return Enumerable.Empty<EventoNotte>();
+            return partita.RisultatoNotte.Eventi.Where(e => e.Riservato);
+        }
+    }
+
+    private IEnumerable<VoceLog> LogFiltrato
+    {
+        get
+        {
+            if (partita == null) return Enumerable.Empty<VoceLog>();
+
+            IEnumerable<VoceLog> voci = partita.Log;
+            voci = filtroLog switch
+            {
+                "notte" => voci.Where(v => v.Tipo is TipoLog.Notte or TipoLog.Potere),
+                "voti" => voci.Where(v => v.Tipo == TipoLog.Voto),
+                "morti" => voci.Where(v => v.Tipo == TipoLog.Morte),
+                _ => voci
+            };
+
+            return voci.TakeLast(250);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        partita = PartitaSvc.Corrente;
+        if (partita != null)
+        {
+            caricamento = false;
+            ultimoSalvataggio = partita.SalvataIl;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (partita == null)
+            {
+                partita = await Archivio.CaricaAsync();
+                if (partita != null)
+                {
+                    PartitaSvc.Corrente = partita;
+                    ultimoSalvataggio = partita.SalvataIl;
+                }
+            }
+
+            caricamento = false;
+            StateHasChanged();
+        }
+
+        if (partita != null && partita.Log.Count != logCountPrecedente)
+        {
+            logCountPrecedente = partita.Log.Count;
+            try
+            {
+                await JS.InvokeVoidAsync("lupusStorage.scrollLog");
+            }
+            catch (JSDisconnectedException)
+            {
+                // Il circuito è già chiuso: nessun problema.
+            }
+        }
+    }
+
+    private string ClasseFase(FasePartita fase)
+    {
+        if (partita == null) return "todo";
+
+        var corrente = Array.IndexOf(Fasi, partita.Fase);
+        var indice = Array.IndexOf(Fasi, fase);
+
+        if (indice == corrente) return "current";
+        return indice < corrente ? "done" : "todo";
+    }
+
+    private static string ClasseLog(TipoLog tipo) => tipo switch
+    {
+        TipoLog.Notte => "log-notte",
+        TipoLog.Potere => "log-potere",
+        TipoLog.Morte => "log-morte",
+        TipoLog.Voto => "log-voto",
+        TipoLog.Trasformazione => "log-trasformazione",
+        TipoLog.Vittoria => "log-vittoria",
+        TipoLog.Configurazione => "log-configurazione",
+        _ => "log-info"
+    };
+
+    private static string IconaPasso(PassoNotte passo)
+    {
+        if (passo.Tipo == TipoPasso.Capobranco) return "👑";
+
+        return passo.Potere switch
+        {
+            Potere.Lupo or Potere.ImputatoLupo => "🐺",
+            Potere.Guardiano or Potere.ImputatoGuardiano => "🛡️",
+            Potere.Annullatore => "🚫",
+            Potere.Becchino => "⚰️",
+            Potere.Veggente or Potere.ImputatoVeggente => "🔮",
+            Potere.Puttana or Potere.ImputatoPuttana => "💃",
+            Potere.Spia or Potere.ImputatoSpia => "🕵️",
+            Potere.Cacciatore or Potere.ImputatoCacciatore => "🪤",
+            Potere.Gufo or Potere.ImputatoGufo => "🦉",
+            Potere.Copione or Potere.Copione2 => "🎭",
+            _ => "✨"
+        };
+    }
+
+    private bool Rivelato(Giocatore g) => ruoliRivelati.Contains(g.Id);
+
+    private void ToggleMostraRuoli() => mostraRuoli = !mostraRuoli;
+
+    private void ImpostaFiltro(string chiave) => filtroLog = chiave;
+
+    private void ChiudiErrore() => errore = null;
+
+    private void ChiudiAvviso() => avviso = null;
+
+    private void ApriModaleRuoli()
+    {
+        giocatoreRivelato = null;
+        mostraModaleRuolo = true;
+    }
+
+    private void ApriRivelazione(Giocatore g)
+    {
+        ruoliRivelati.Add(g.Id);
+        giocatoreRivelato = g;
+        mostraModaleRuolo = true;
+    }
+
+    private void RivelaGiocatore(Giocatore g)
+    {
+        ruoliRivelati.Add(g.Id);
+        giocatoreRivelato = g;
+    }
+
+    private void ChiudiRivelazione() => giocatoreRivelato = null;
+
+    private void ChiudiModale()
+    {
+        mostraModaleRuolo = false;
+        giocatoreRivelato = null;
+    }
+
+    private Task Seleziona(string id)
+    {
+        selezionatoId = id;
+        errore = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task IniziaNotte()
+    {
+        if (partita == null) return;
+
+        errore = null;
+        MotoreLupus.IniziaNotte(partita);
+        selezionatoId = null;
+        await SalvaAsync();
+    }
+
+    private async Task EseguiPasso()
+    {
+        if (partita?.PassoCorrente is not { } passo) return;
+
+        if (string.IsNullOrWhiteSpace(selezionatoId))
+        {
+            errore = "Scegli un giocatore prima di confermare.";
+            return;
+        }
+
+        errore = null;
+        var esito = MotoreLupus.EseguiPasso(partita, passo.Id, selezionatoId);
+        if (!esito.Ok)
+        {
+            errore = esito.Errore;
+            return;
+        }
+
+        selezionatoId = null;
+        await SalvaAsync();
+    }
+
+    private async Task ConfermaRisultato()
+    {
+        if (partita?.PassoCorrente is not { } passo) return;
+
+        MotoreLupus.ConfermaRisultato(partita, passo.Id);
+        selezionatoId = null;
+        await SalvaAsync();
+    }
+
+    private async Task RisolviNotte()
+    {
+        if (partita == null) return;
+
+        errore = null;
+        var esito = MotoreLupus.RisolviNotte(partita);
+        if (!esito.Ok)
+        {
+            errore = esito.Errore;
+            return;
+        }
+
+        selezionatoId = null;
+        await SalvaAsync();
+    }
+
+    private async Task VaiAlGiorno()
+    {
+        if (partita == null) return;
+
+        MotoreLupus.VaiAlGiorno(partita);
+        selezionatoId = null;
+        await SalvaAsync();
+    }
+
+    private async Task ApriVoto()
+    {
+        if (partita == null) return;
+
+        MotoreLupus.ApriVoto(partita);
+        selezionatoId = null;
+        await SalvaAsync();
+    }
+
+    private async Task Vota()
+    {
+        if (partita == null || string.IsNullOrWhiteSpace(selezionatoId)) return;
+
+        errore = null;
+        var esito = MotoreLupus.Vota(partita, selezionatoId);
+        if (!esito.Ok)
+        {
+            errore = esito.Errore;
+            return;
+        }
+
+        selezionatoId = null;
+        await SalvaAsync();
+    }
+
+    private async Task ScegliBallottaggio()
+    {
+        if (partita == null || string.IsNullOrWhiteSpace(selezionatoId)) return;
+
+        errore = null;
+        var esito = MotoreLupus.ScegliBallottaggio(partita, selezionatoId);
+        if (!esito.Ok)
+        {
+            errore = esito.Errore;
+            return;
+        }
+
+        selezionatoId = null;
+        await SalvaAsync();
+    }
+
+    private async Task ProssimaNotte()
+    {
+        if (partita == null) return;
+
+        MotoreLupus.ProssimaNotte(partita);
+        selezionatoId = null;
+        timerReset++;
+        await SalvaAsync();
+    }
+
+    private async Task AggiornaDurataTimer(int secondi)
+    {
+        if (partita == null) return;
+
+        partita.TimerSecondi = secondi;
+        await SalvaAsync();
+    }
+
+    private async Task SalvaManuale() => await SalvaAsync(true);
+
+    private async Task SalvaAsync(bool conferma = false)
+    {
+        if (partita == null) return;
+
+        salvataggioInCorso = true;
+        try
+        {
+            var ok = await Archivio.SalvaAsync(partita);
+            if (ok)
+            {
+                ultimoSalvataggio = partita.SalvataIl ?? DateTime.Now;
+                if (conferma) avviso = "Partita salvata.";
+            }
+            else
+            {
+                avviso = "Il browser non permette il salvataggio locale. Esporta il JSON per non perdere la partita.";
+            }
+        }
+        catch (Exception ex)
+        {
+            avviso = $"Salvataggio non riuscito: {ex.Message}";
+        }
+        finally
+        {
+            salvataggioInCorso = false;
+        }
+    }
+
+    private async Task Esporta()
+    {
+        if (partita == null) return;
+
+        await Archivio.ScaricaAsync(partita);
+        avviso = "File JSON scaricato.";
+    }
+
+    private async Task ImportaAsync(InputFileChangeEventArgs e)
+    {
+        errore = null;
+        avviso = null;
+
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxAllowedSize: 5_000_000);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+
+            var importata = Serializzazione.Deserializza(json);
+            if (importata == null)
+            {
+                errore = "Il file non contiene una partita valida.";
+                return;
+            }
+
+            if (importata.Giocatori.Count == 0)
+            {
+                errore = "Il file non contiene giocatori.";
+                return;
+            }
+
+            partita = importata;
+            PartitaSvc.Corrente = importata;
+            selezionatoId = null;
+            ruoliRivelati.Clear();
+            mostraModaleRuolo = false;
+            giocatoreRivelato = null;
+            filtroLog = "tutto";
+            timerReset++;
+            ultimoSalvataggio = importata.SalvataIl;
+
+            await SalvaAsync();
+            avviso = "Partita importata correttamente.";
+        }
+        catch (Exception ex)
+        {
+            errore = $"Import non riuscito: {ex.Message}";
+        }
+    }
+
+    private async Task NuovaPartita()
+    {
+        if (partita == null)
+        {
+            Nav.NavigateTo("/");
+            return;
+        }
+
+        var conferma = await Archivio.ConfermaAsync(
+            "Vuoi abbandonare la partita corrente? Il salvataggio locale verrà cancellato.");
+
+        if (!conferma) return;
+
+        await Archivio.CancellaAsync();
+        PartitaSvc.Corrente = null;
+        partita = null;
+        Nav.NavigateTo("/");
+    }
+}

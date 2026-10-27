@@ -1,0 +1,82 @@
+# ============================================================
+#  Lupus in Tabula · .gitignore
+#  Progetto .NET 10 / ASP.NET Core / Blazor Server
+# ============================================================
+
+# --- Build output -------------------------------------------------
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+artifacts/
+publish/
+*.publishproj
+
+# --- Visual Studio ------------------------------------------------
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.dbmdl
+*.dbproj.schemaview
+*.psess
+*.vsp
+*.vspx
+*.sap
+
+# --- Visual Studio Code / Rider / altri IDE -----------------------
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea/**/workspace.xml
+.idea/**/usage.statistics.xml
+
+# --- Test e coverage ---------------------------------------------
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+coverage*.xml
+coverage*.json
+coverage*.info
+*.coverage
+*.coveragexml
+
+# --- Log e file temporanei ---------------------------------------
+*.log
+*.tmp
+*.temp
+*.bak
+*.cache
+*.pid
+*.swp
+*~
+
+# --- Sistema operativo -------------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# --- Pacchetti e pubblicazione -----------------------------------
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+*.nuget.props
+*.nuget.targets
+
+# --- Segreti e configurazione locale -----------------------------
+# appsettings.Development.json è versionato di proposito (nessun segreto).
+.env
+.env.*
+!.env.example
+secrets.json
+
+# --- Frontend (se in futuro si aggiunge npm) ---------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

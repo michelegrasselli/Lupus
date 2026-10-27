@@ -1,0 +1,66 @@
+@* Selettore giocatore riutilizzabile per azioni, voti e capobranco. *@
+<div class="player-picker @(Compatto ? "compact" : "")">
+    @if (Giocatori.Count == 0)
+    {
+        <p class="empty-state">Nessun giocatore disponibile.</p>
+    }
+    else
+    {
+        @foreach (var g in Giocatori)
+        {
+            <button type="button"
+                    @key="g.Id"
+                    class="player-option @(SelezionatoId == g.Id ? "selected" : "") @(!g.Vivo ? "is-dead" : "")"
+                    @onclick="() => Seleziona(g)"
+                    aria-pressed="@(SelezionatoId == g.Id)">
+                <span class="avatar" style="--accent: @Ruoli.Info(g.Ruolo).Accento">@g.Iniziali</span>
+                <span class="player-option-body">
+                    <span class="player-option-name">@g.Nome</span>
+                    @if (MostraRuoli)
+                    {
+                        <span class="role-chip" style="--accent: @Ruoli.Info(g.Ruolo).Accento">
+                            @Ruoli.Info(g.Ruolo).Icona @Ruoli.Nome(g.Ruolo)
+                        </span>
+                    }
+                    else if (!g.Vivo)
+                    {
+                        <span class="role-chip muted">fuori gioco</span>
+                    }
+                </span>
+                <span class="player-option-badges">
+                    @if (g.Capobranco)
+                    {
+                        <span title="Capobranco">👑</span>
+                    }
+                    @if (g.Trasformato)
+                    {
+                        <span title="Trasformato">🎭</span>
+                    }
+                    @if (!g.Vivo)
+                    {
+                        <span title="Morto">✝</span>
+                    }
+                </span>
+            </button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Giocatore> Giocatori { get; set; } = Array.Empty<Giocatore>();
+
+    [Parameter]
+    public string? SelezionatoId { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnSeleziona { get; set; }
+
+    [Parameter]
+    public bool MostraRuoli { get; set; }
+
+    [Parameter]
+    public bool Compatto { get; set; }
+
+    private Task Seleziona(Giocatore g) => OnSeleziona.InvokeAsync(g.Id);
+}

@@ -1,0 +1,35 @@
+#blazor-error-ui {
+    color-scheme: dark;
+    background: #3b1218;
+    border-top: 1px solid rgba(248, 113, 113, 0.35);
+    color: #fecaca;
+    bottom: 0;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.45);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.7rem 3.2rem 0.75rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+    font-size: 0.86rem;
+}
+
+#blazor-error-ui .reload {
+    color: #fff;
+    font-weight: 700;
+    margin-left: 0.4rem;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.75;
+}
+
+#blazor-error-ui .dismiss:hover {
+    opacity: 1;
+}

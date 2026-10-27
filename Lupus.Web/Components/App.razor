@@ -1,0 +1,26 @@
+﻿<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0b12" />
+    <meta name="description" content="Assistente narratore per Lupus in Tabula: gestisci notti, ruoli, voti e ballottaggi." />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%BA%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["Lupus.Web.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body>
+    <Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+    <ReconnectModal />
+    <script src="@Assets["js/lupus.js"]"></script>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <noscript>Questa applicazione richiede JavaScript per funzionare.</noscript>
+</body>
+
+</html>
