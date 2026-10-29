@@ -1,0 +1,305 @@
+@page "/entra"
+@page "/entra/{Codice}"
+@implements IDisposable
+@inject StanzeService Stanze
+@inject ArchivioSessioni Sessioni
+@inject NavigationManager Nav
+
+<PageTitle>Lupus · Entra nella stanza</PageTitle>
+
+<div class="join-page">
+    <header class="join-hero">
+        <a class="back-link" href="/">← Torna alla home</a>
+        <div class="join-hero-mark">🐺</div>
+        <p class="eyebrow">Lupus in Tabula</p>
+        <h1>Entra nel villaggio</h1>
+        <p class="muted">
+            Scegli il tuo nome. Il ruolo resterà segreto sul tuo telefono:
+            nessun altro potrà vederlo.
+        </p>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(errore))
+    {
+        <div class="alert alert-error">@errore</div>
+    }
+
+    @if (string.IsNullOrWhiteSpace(codice))
+    {
+        <div class="card">
+            <div class="card-head compact">
+                <div>
+                    <h2>Codice della stanza</h2>
+                    <p class="muted small">Te lo ha dato il narratore.</p>
+                </div>
+            </div>
+
+            <div class="join-row">
+                <input class="code-input"
+                       @bind="codiceInput"
+                       @bind:event="oninput"
+                       placeholder="CODICE"
+                       maxlength="8"
+                       autocomplete="off"
+                       aria-label="Codice stanza" />
+                <button type="button" class="btn btn-primary" @onclick="Cerca" disabled="@(codiceInput.Trim().Length < 4)">
+                    Cerca
+                </button>
+            </div>
+        </div>
+    }
+    else if (stanza == null)
+    {
+        <div class="card empty-page">
+            <div class="empty-icon">🌫️</div>
+            <h2>Stanza non trovata</h2>
+            <p class="muted">
+                Il codice <strong>@codice</strong> non esiste più, oppure il server è stato riavviato.
+                Chiedi al narratore un nuovo codice.
+            </p>
+            <div class="empty-actions">
+                <button type="button" class="btn btn-primary" @onclick="CambiaCodice">Prova un altro codice</button>
+                <a class="btn btn-ghost" href="/">Torna alla home</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card join-room-card">
+            <div class="join-room-head">
+                <div>
+                    <p class="eyebrow">Stanza</p>
+                    <h2 class="room-code">@codice</h2>
+                </div>
+                <span class="pill">@posti.Count(p => p.Occupato) / @posti.Count posti</span>
+            </div>
+
+            <p class="muted small">
+                @if (stanza.Partita.Fase == FasePartita.Finita)
+                {
+                    <text>La partita è conclusa: non è più possibile entrare.</text>
+                }
+                else if (stanza.Avviata)
+                {
+                    <text>La partita è già iniziata. Se prendi un posto vedrai subito il tuo ruolo.</text>
+                }
+                else
+                {
+                    <text>Il narratore sta preparando la notte. Scegli il tuo nome e aspetta l'avvio.</text>
+                }
+            </p>
+
+            @if (miaSessione != null)
+            {
+                <div class="session-banner">
+                    <div>
+                        <strong>Sei già registrato come @miaSessione.Nome</strong>
+                        <span class="muted small">Questo dispositivo ha già un posto in questa stanza.</span>
+                    </div>
+                    <div class="session-actions">
+                        <button type="button" class="btn btn-primary btn-sm" @onclick="Rientra">Rientra</button>
+                        <button type="button" class="btn btn-ghost btn-sm" @onclick="DimenticaDispositivo">Dimentica</button>
+                    </div>
+                </div>
+            }
+
+            <h3 class="section-title">Scegli il tuo posto</h3>
+
+            <div class="seat-grid">
+                @foreach (var posto in posti)
+                {
+                    <button type="button"
+                            class="seat-card @(posto.Occupato ? "occupied" : "free")"
+                            disabled="@(posto.Occupato || stanza.Partita.Fase == FasePartita.Finita || operazioneInCorso)"
+                            @onclick="() => Reclama(posto)">
+                        <span class="avatar">@posto.Iniziali</span>
+                        <span class="seat-body">
+                            <span class="seat-name">@posto.Nome</span>
+                            <span class="seat-state">@(posto.Occupato ? "già entrato" : "libero · tocca per entrare")</span>
+                        </span>
+                        @if (posto.Occupato)
+                        {
+                            <span class="seat-badge">✓</span>
+                        }
+                    </button>
+                }
+            </div>
+
+            @if (posti.All(p => p.Occupato))
+            {
+                <p class="muted small">
+                    Tutti i posti sono occupati. Se il tuo telefono si è scollegato,
+                    chiedi al narratore di liberare il tuo posto.
+                </p>
+            }
+
+            <div class="join-tips">
+                <span>🔒 Il ruolo è visibile solo a te.</span>
+                <span>📶 Resta sulla stessa Wi-Fi del narratore.</span>
+                <span>🔁 Puoi chiudere e riaprire questa pagina.</span>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Codice { get; set; }
+
+    private string codiceInput = "";
+    private string? codice;
+    private Stanza? stanza;
+    private List<PostoStanza> posti = new();
+    private SessioneBrowser? miaSessione;
+    private string? errore;
+    private bool operazioneInCorso;
+    private string? codiceSottoscritto;
+
+    protected override void OnParametersSet()
+    {
+        var nuovo = string.IsNullOrWhiteSpace(Codice) ? null : Codice.Trim().ToUpperInvariant();
+
+        if (nuovo == codice && stanza != null) return;
+
+        codice = nuovo;
+        codiceInput = nuovo ?? "";
+        AggiornaStanza();
+        Sottoscrivi();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        if (string.IsNullOrWhiteSpace(codice))
+        {
+            var sessioni = await Sessioni.CaricaAsync();
+            var ultima = sessioni
+                .Where(s => s.Tipo == TipoSessione.Giocatore)
+                .OrderByDescending(s => s.SalvataIl)
+                .FirstOrDefault();
+
+            if (ultima != null && Stanze.Ottieni(ultima.Codice) != null)
+            {
+                codiceInput = ultima.Codice;
+                StateHasChanged();
+            }
+
+            return;
+        }
+
+        miaSessione = await Sessioni.TrovaAsync(codice, TipoSessione.Giocatore);
+
+        if (miaSessione != null && stanza != null &&
+            Stanze.GiocatoreDi(stanza, miaSessione.Token) == null)
+        {
+            await Sessioni.RimuoviAsync(codice, TipoSessione.Giocatore);
+            miaSessione = null;
+        }
+
+        StateHasChanged();
+    }
+
+    private void AggiornaStanza()
+    {
+        stanza = string.IsNullOrWhiteSpace(codice) ? null : Stanze.Ottieni(codice);
+        posti = stanza == null ? new List<PostoStanza>() : Stanze.PostiPubblici(stanza).ToList();
+        errore = stanza == null && !string.IsNullOrWhiteSpace(codice)
+            ? "Stanza non trovata. Controlla il codice o chiedi al narratore."
+            : null;
+    }
+
+    private void Sottoscrivi()
+    {
+        if (codiceSottoscritto == codice) return;
+
+        if (codiceSottoscritto != null)
+            Stanze.AnnullaSottoscrizione(codiceSottoscritto, OnStanzaAggiornata);
+
+        codiceSottoscritto = codice;
+
+        if (codice != null)
+            Stanze.Sottoscrivi(codice, OnStanzaAggiornata);
+    }
+
+    private async Task OnStanzaAggiornata()
+    {
+        await InvokeAsync(() =>
+        {
+            AggiornaStanza();
+            StateHasChanged();
+        });
+    }
+
+    private void Cerca()
+    {
+        var nuovo = codiceInput.Trim().ToUpperInvariant();
+        if (nuovo.Length < 4) return;
+
+        Nav.NavigateTo($"/entra/{nuovo}");
+    }
+
+    private void CambiaCodice()
+    {
+        Nav.NavigateTo("/entra");
+    }
+
+    private async Task Reclama(PostoStanza posto)
+    {
+        if (stanza == null || codice == null) return;
+        if (posto.Occupato) return;
+
+        operazioneInCorso = true;
+        errore = null;
+
+        try
+        {
+            var (ok, messaggio, risultato) = await Stanze.UnisciAsync(codice, posto.GiocatoreId);
+            if (!ok || risultato?.Token == null)
+            {
+                errore = messaggio ?? "Non è stato possibile entrare.";
+                AggiornaStanza();
+                return;
+            }
+
+            await Sessioni.SalvaAsync(new SessioneBrowser
+            {
+                Codice = codice,
+                Tipo = TipoSessione.Giocatore,
+                Token = risultato.Token,
+                GiocatoreId = posto.GiocatoreId,
+                Nome = posto.Nome
+            });
+
+            Nav.NavigateTo($"/gioca/{codice}?t={risultato.Token}");
+        }
+        finally
+        {
+            operazioneInCorso = false;
+        }
+    }
+
+    private void Rientra()
+    {
+        if (miaSessione == null || codice == null) return;
+        Nav.NavigateTo($"/gioca/{codice}?t={miaSessione.Token}");
+    }
+
+    private async Task DimenticaDispositivo()
+    {
+        if (codice == null) return;
+
+        if (stanza != null && miaSessione is { Token: { Length: > 0 } token })
+            await Stanze.LasciaPostoAsync(stanza, token);
+
+        await Sessioni.RimuoviAsync(codice, TipoSessione.Giocatore);
+        miaSessione = null;
+        AggiornaStanza();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        if (codiceSottoscritto != null)
+            Stanze.AnnullaSottoscrizione(codiceSottoscritto, OnStanzaAggiornata);
+    }
+}

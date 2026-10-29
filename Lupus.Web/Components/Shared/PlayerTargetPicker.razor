@@ -1,0 +1,37 @@
+@* Selettore per i giocatori: mostra solo nomi e stato, mai ruoli o colori di fazione. *@
+<div class="player-picker target-picker @(Compatto ? "compact" : "")">
+    @if (Giocatori.Count == 0)
+    {
+        <p class="empty-state">Nessun bersaglio disponibile.</p>
+    }
+    else
+    {
+        @foreach (var g in Giocatori)
+        {
+            <button type="button"
+                    @key="g.Id"
+                    class="player-option @(SelezionatoId == g.Id ? "selected" : "") @(!g.Vivo ? "is-dead" : "")"
+                    @onclick="() => Seleziona(g.Id)"
+                    aria-pressed="@(SelezionatoId == g.Id)">
+                <span class="avatar">@g.Iniziali</span>
+                <span class="player-option-body">
+                    <span class="player-option-name">@g.Nome</span>
+                    <span class="player-option-hint">@(g.Vivo ? "in vita" : "fuori gioco")</span>
+                </span>
+                @if (SelezionatoId == g.Id)
+                {
+                    <span class="target-check" aria-hidden="true">✓</span>
+                }
+            </button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<GiocatorePubblico> Giocatori { get; set; } = Array.Empty<GiocatorePubblico>();
+    [Parameter] public string? SelezionatoId { get; set; }
+    [Parameter] public EventCallback<string> OnSeleziona { get; set; }
+    [Parameter] public bool Compatto { get; set; }
+
+    private Task Seleziona(string id) => OnSeleziona.InvokeAsync(id);
+}

@@ -1,43 +1,76 @@
 ﻿@page "/"
-@inject PartitaService PartitaSvc
+@inject StanzeService Stanze
 @inject ArchivioPartita Archivio
+@inject ArchivioSessioni Sessioni
+@inject ReteHelper Rete
 @inject NavigationManager Nav
-@inject IJSRuntime JS
 
-<PageTitle>Lupus · Nuova partita</PageTitle>
+<PageTitle>Lupus · Nuova stanza</PageTitle>
 
 <div class="setup-page">
     <header class="setup-hero">
         <div class="hero-mark">🐺</div>
         <div class="hero-copy">
-            <p class="eyebrow">Lupus in Tabula</p>
-            <h1>Assistente narratore</h1>
+            <p class="eyebrow">Lupus in Tabula · Multiplayer</p>
+            <h1>Il villaggio è connesso</h1>
             <p class="hero-sub">
-                Prepara la partita, gestisci le notti e lascia che il villaggio discuta.
-                Tutto in un'unica schermata, senza carta e senza appunti.
+                Crea la stanza, mostra il codice ai giocatori e lascia che ognuno
+                veda il proprio ruolo sul telefono. Il narratore conduce la notte,
+                il villaggio vota dal divano.
             </p>
         </div>
         <div class="hero-stats">
             <div><strong>@Ruoli.Tutti.Count</strong><span>ruoli</span></div>
             <div><strong>@Preset.Tutti.Count</strong><span>preset</span></div>
-            <div><strong>@numeroGiocatori</strong><span>giocatori</span></div>
+            <div><strong>@numeroGiocatori</strong><span>posti</span></div>
         </div>
     </header>
 
-    @if (partitaSalvata != null)
+    @if (sessioni.Count > 0)
     {
-        <div class="resume-banner">
-            <div class="resume-icon">💾</div>
-            <div class="resume-copy">
-                <strong>Partita salvata trovata</strong>
-                <span>
-                    @Testi.FaseBreve(partitaSalvata.Fase) · Turno @partitaSalvata.Turno ·
-                    @partitaSalvata.TotaleVivi vivi su @partitaSalvata.Giocatori.Count
-                </span>
+        <div class="card sessions-card">
+            <div class="card-head compact">
+                <div>
+                    <h2>Le tue stanze</h2>
+                    <p class="muted small">Riprendi da dove eri rimasto su questo dispositivo.</p>
+                </div>
+                <span class="pill">@sessioni.Count</span>
             </div>
-            <div class="resume-actions">
-                <button type="button" class="btn btn-primary" @onclick="Riprendi">Riprendi</button>
-                <button type="button" class="btn btn-ghost" @onclick="IgnoraSalvataggio">Ignora</button>
+
+            <div class="session-list">
+                @foreach (var sessione in sessioni)
+                {
+                    var stanza = Stanze.Ottieni(sessione.Codice);
+                    <div class="session-row">
+                        <div class="session-code">@sessione.Codice</div>
+                        <div class="session-body">
+                            <strong>
+                                @(sessione.Tipo == TipoSessione.Host ? "Narratore" : sessione.Nome ?? "Giocatore")
+                            </strong>
+                            <span class="muted small">
+                                @if (stanza == null)
+                                {
+                                    <text>Stanza scaduta o server riavviato.</text>
+                                }
+                                else
+                                {
+                                    <text>@Testi.FaseBreve(stanza.Partita.Fase) · Turno @stanza.Partita.Turno</text>
+                                }
+                            </span>
+                        </div>
+                        <div class="session-actions">
+                            @if (stanza != null)
+                            {
+                                <button type="button" class="btn btn-primary btn-sm" @onclick="() => RiprendiSessione(sessione)">
+                                    Riprendi
+                                </button>
+                            }
+                            <button type="button" class="btn btn-ghost btn-sm" @onclick="() => DimenticaSessione(sessione)">
+                                Dimentica
+                            </button>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
     }
@@ -46,6 +79,41 @@
     {
         <div class="alert alert-error">@errore</div>
     }
+
+    <div class="card join-card">
+        <div class="card-head compact">
+            <div class="card-title">
+                <span class="step-number">→</span>
+                <div>
+                    <h2>Entra in una stanza</h2>
+                    <p class="muted">Hai il codice? Inseriscilo e scegli il tuo posto.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="join-row">
+            <input class="code-input"
+                   @bind="codiceIngresso"
+                   @bind:event="oninput"
+                   placeholder="CODICE"
+                   maxlength="8"
+                   autocomplete="off"
+                   aria-label="Codice stanza" />
+            <button type="button" class="btn btn-primary" @onclick="Entra" disabled="@(!PuoiEntrare)">
+                Cerca la stanza
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(erroreIngresso))
+        {
+            <p class="form-error">@erroreIngresso</p>
+        }
+
+        <p class="micro">
+            I telefoni devono essere sulla stessa Wi-Fi del narratore.
+            Indirizzo locale: <strong>@Rete.BaseUrl</strong>
+        </p>
+    </div>
 
     <div class="setup-grid">
         <section class="setup-main">
@@ -126,7 +194,7 @@
                         <span class="step-number">3</span>
                         <div>
                             <h2>Nomi dei giocatori</h2>
-                            <p class="muted">I nomi devono essere unici. Puoi generarli automaticamente.</p>
+                            <p class="muted">I nomi devono essere unici. Ogni nome diventa un posto da reclamare.</p>
                         </div>
                     </div>
                     <div class="head-actions">
@@ -169,7 +237,7 @@
 
                 @if (Errori.Count == 0)
                 {
-                    <div class="validation ok">Tutto pronto. Buonanotte...</div>
+                    <div class="validation ok">Tutto pronto. La stanza può nascere.</div>
                 }
                 else
                 {
@@ -181,20 +249,36 @@
                     </ul>
                 }
 
-                <button type="button" class="btn btn-primary btn-block" @onclick="Avvia" disabled="@(!PuoiAvviare)">
-                    Inizia la partita
+                <button type="button" class="btn btn-primary btn-block" @onclick="CreaStanza" disabled="@(!PuoiCreare)">
+                    Crea la stanza
                 </button>
-                <p class="micro">Salvataggio automatico nel browser. Nessun dato lascia il dispositivo.</p>
+                <p class="micro">
+                    Riceverai un codice a 5 lettere e un link per i telefoni.
+                    La partita vive sul server: niente salvataggi da passare.
+                </p>
             </div>
 
             <div class="card info-card">
                 <h3>Come funziona</h3>
                 <ol class="how-list">
-                    <li>Prepara ruoli e nomi.</li>
-                    <li>Rivela il ruolo a ogni giocatore passando il dispositivo.</li>
-                    <li>Segui la notte: i ruoli vengono chiamati in ordine di priorità.</li>
-                    <li>All'alba annuncia i morti, poi gestisci voto e ballottaggio.</li>
+                    <li>Crea la stanza con ruoli e nomi.</li>
+                    <li>I giocatori aprono il link e reclamano il proprio posto.</li>
+                    <li>Avvia la partita: ognuno vede il ruolo solo sul proprio telefono.</li>
+                    <li>La notte i poteri si scelgono dal telefono; il narratore vede tutto.</li>
+                    <li>Il voto del rogo si raccoglie dal vivo, con conteggio in tempo reale.</li>
                 </ol>
+            </div>
+
+            <div class="card info-card">
+                <h3>Riprendi un salvataggio</h3>
+                <p class="muted small">
+                    Un JSON esportato da una partita precedente può diventare una nuova stanza.
+                    I posti restano liberi: i giocatori dovranno rientrare.
+                </p>
+                <label class="btn btn-ghost btn-block file-btn">
+                    @(importInCorso ? "Importazione..." : "Importa JSON")
+                    <InputFile OnChange="ImportaAsync" accept=".json,application/json" />
+                </label>
             </div>
         </aside>
     </div>
@@ -212,17 +296,21 @@
     private bool assegnaCasualmente = true;
     private string? presetAttivo;
     private string? errore;
-    private Partita? partitaSalvata;
+    private string? erroreIngresso;
+    private string codiceIngresso = "";
+    private bool importInCorso;
+    private List<SessioneBrowser> sessioni = new();
 
     private int TotaleRuoli => composizione.Values.Sum();
     private int Lupi => Quantita(Ruolo.Lupo);
     private int Altri => TotaleRuoli - Lupi;
     private int PercentualeLupi => TotaleRuoli == 0 ? 0 : (int)Math.Round(100.0 * Lupi / TotaleRuoli);
+    private bool PuoiEntrare => codiceIngresso.Trim().Length >= 4;
 
     private List<string> Errori =>
         CreazionePartita.Valida(numeroGiocatori, composizione, nomi.Select(n => n.Nome).ToList());
 
-    private bool PuoiAvviare => Errori.Count == 0;
+    private bool PuoiCreare => Errori.Count == 0;
 
     protected override void OnInitialized()
     {
@@ -234,9 +322,21 @@
     {
         if (!firstRender) return;
 
-        partitaSalvata = await Archivio.CaricaAsync();
-        if (partitaSalvata != null)
-            StateHasChanged();
+        await CaricaSessioniAsync();
+        StateHasChanged();
+    }
+
+    private async Task CaricaSessioniAsync()
+    {
+        var tutte = await Sessioni.CaricaAsync();
+        sessioni = tutte
+            .Where(s => Stanze.Ottieni(s.Codice) != null)
+            .OrderByDescending(s => s.SalvataIl)
+            .ToList();
+
+        // Rimuove i riferimenti a stanze che il server non ha più.
+        foreach (var scaduta in tutte.Except(sessioni))
+            await Sessioni.RimuoviAsync(scaduta.Codice, scaduta.Tipo);
     }
 
     private int Quantita(Ruolo ruolo) => composizione.GetValueOrDefault(ruolo);
@@ -299,7 +399,7 @@
             entry.Nome = "";
     }
 
-    private async Task Avvia()
+    private async Task CreaStanza()
     {
         errore = null;
 
@@ -311,14 +411,19 @@
 
         try
         {
-            var partita = CreazionePartita.Crea(
-                nomi.Select(n => n.Nome).ToList(),
+            var (stanza, hostToken) = Stanze.Crea(
+                nomi.Select(n => n.Nome.Trim()).ToList(),
                 composizione,
                 assegnaCasualmente);
 
-            PartitaSvc.Corrente = partita;
-            await Archivio.SalvaAsync(partita);
-            Nav.NavigateTo("/partita");
+            await Sessioni.SalvaAsync(new SessioneBrowser
+            {
+                Codice = stanza.Codice,
+                Tipo = TipoSessione.Host,
+                Token = hostToken
+            });
+
+            Nav.NavigateTo($"/partita/{stanza.Codice}?h={hostToken}");
         }
         catch (Exception ex)
         {
@@ -326,16 +431,84 @@
         }
     }
 
-    private void Riprendi()
+    private void Entra()
     {
-        if (partitaSalvata == null) return;
-        PartitaSvc.Corrente = partitaSalvata;
-        Nav.NavigateTo("/partita");
+        erroreIngresso = null;
+        var codice = codiceIngresso.Trim().ToUpperInvariant();
+
+        if (codice.Length < 4)
+        {
+            erroreIngresso = "Inserisci il codice della stanza.";
+            return;
+        }
+
+        if (Stanze.Ottieni(codice) == null)
+        {
+            erroreIngresso = "Nessuna stanza con questo codice. Controlla e riprova.";
+            return;
+        }
+
+        Nav.NavigateTo($"/entra/{codice}");
     }
 
-    private async Task IgnoraSalvataggio()
+    private void RiprendiSessione(SessioneBrowser sessione)
     {
-        await Archivio.CancellaAsync();
-        partitaSalvata = null;
+        if (sessione.Tipo == TipoSessione.Host)
+            Nav.NavigateTo($"/partita/{sessione.Codice}?h={sessione.Token}");
+        else
+            Nav.NavigateTo($"/gioca/{sessione.Codice}?t={sessione.Token}");
+    }
+
+    private async Task DimenticaSessione(SessioneBrowser sessione)
+    {
+        if (sessione.Tipo == TipoSessione.Giocatore &&
+            Stanze.Ottieni(sessione.Codice) is { } stanza)
+        {
+            await Stanze.LasciaPostoAsync(stanza, sessione.Token);
+        }
+
+        await Sessioni.RimuoviAsync(sessione.Codice, sessione.Tipo);
+        await CaricaSessioniAsync();
+    }
+
+    private async Task ImportaAsync(InputFileChangeEventArgs e)
+    {
+        errore = null;
+        importInCorso = true;
+
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxAllowedSize: 5_000_000);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+
+            var importata = Serializzazione.Deserializza(json);
+            if (importata == null || importata.Giocatori.Count == 0)
+            {
+                errore = "Il file non contiene una partita valida.";
+                return;
+            }
+
+            var avviata = importata.Fase != FasePartita.NotteIntro;
+            var (stanza, hostToken) = Stanze.CreaDaPartita(importata, avviata);
+
+            await Sessioni.SalvaAsync(new SessioneBrowser
+            {
+                Codice = stanza.Codice,
+                Tipo = TipoSessione.Host,
+                Token = hostToken
+            });
+
+            Nav.NavigateTo($"/partita/{stanza.Codice}?h={hostToken}");
+        }
+        catch (Exception ex)
+        {
+            errore = $"Import non riuscito: {ex.Message}";
+        }
+        finally
+        {
+            importInCorso = false;
+        }
     }
 }

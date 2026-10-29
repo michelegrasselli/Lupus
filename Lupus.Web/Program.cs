@@ -6,8 +6,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-builder.Services.AddScoped<PartitaService>();
+builder.Services.AddSingleton<StanzeService>();
+builder.Services.AddSingleton<ReteHelper>();
 builder.Services.AddScoped<ArchivioPartita>();
+builder.Services.AddScoped<ArchivioSessioni>();
 
 var app = builder.Build();
 
@@ -18,7 +20,6 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 app.MapStaticAssets();

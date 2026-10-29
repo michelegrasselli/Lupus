@@ -1,6 +1,9 @@
-@page "/partita"
-@inject PartitaService PartitaSvc
+@page "/partita/{Codice}"
+@implements IDisposable
+@inject StanzeService Stanze
+@inject ArchivioSessioni Sessioni
 @inject ArchivioPartita Archivio
+@inject ReteHelper Rete
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
@@ -10,36 +13,46 @@
 {
     <div class="loading-page">
         <div class="spinner" aria-hidden="true"></div>
-        <p>Caricamento della partita...</p>
+        <p>Preparo la stanza...</p>
     </div>
 }
-else if (partita == null)
+else if (stanza == null)
 {
     <div class="empty-page">
-        <div class="empty-icon">🐺</div>
-        <h1>Nessuna partita in corso</h1>
+        <div class="empty-icon">🌫️</div>
+        <h1>Stanza non trovata</h1>
         <p class="muted">
-            Crea una nuova partita dalla schermata di preparazione oppure importa un salvataggio JSON.
+            Il codice <strong>@Codice</strong> non esiste più, oppure il server è stato riavviato.
         </p>
         <div class="empty-actions">
-            <a class="btn btn-primary" href="/">Torna alla preparazione</a>
-            <label class="btn btn-ghost file-btn">
-                Importa JSON
-                <InputFile OnChange="ImportaAsync" accept=".json,application/json" />
-            </label>
+            <a class="btn btn-primary" href="/">Torna alla home</a>
+        </div>
+    </div>
+}
+else if (accessoNegato)
+{
+    <div class="empty-page">
+        <div class="empty-icon">🔐</div>
+        <h1>Token narratore mancante</h1>
+        <p class="muted">
+            Apri questa stanza dal link del narratore salvato su questo dispositivo,
+            oppure crea una nuova stanza dalla home.
+        </p>
+        <div class="empty-actions">
+            <a class="btn btn-primary" href="/">Torna alla home</a>
         </div>
     </div>
 }
 else
 {
-    var p = partita!;
+    var p = stanza.Partita;
 
     <div class="game-page">
         <header class="game-header">
             <div class="game-brand">
                 <span class="brand-mark" aria-hidden="true">🐺</span>
                 <div>
-                    <p class="eyebrow">Lupus in Tabula</p>
+                    <p class="eyebrow">Stanza @stanza.Codice · Narratore</p>
                     <h1>@TitoloFase</h1>
                     <p class="muted small">@SottotitoloFase</p>
                 </div>
@@ -57,9 +70,8 @@ else
                 <button type="button" class="btn btn-ghost btn-sm" @onclick="ToggleMostraRuoli">
                     @(mostraRuoli ? "Nascondi ruoli" : "Mostra ruoli")
                 </button>
-                <button type="button" class="btn btn-ghost btn-sm" @onclick="SalvaManuale" disabled="@salvataggioInCorso">Salva</button>
                 <button type="button" class="btn btn-ghost btn-sm" @onclick="Esporta">Esporta</button>
-                <button type="button" class="btn btn-ghost btn-sm" @onclick="NuovaPartita">Nuova</button>
+                <button type="button" class="btn btn-ghost btn-sm" @onclick="ChiudiStanza">Chiudi</button>
             </div>
         </header>
 
@@ -77,20 +89,85 @@ else
         {
             <div class="alert alert-error">
                 <span>@errore</span>
-                <button type="button" class="alert-close" @onclick="ChiudiErrore" aria-label="Chiudi messaggio">✕</button>
+                <button type="button" class="alert-close" @onclick="() => errore = null" aria-label="Chiudi messaggio">✕</button>
             </div>
         }
         @if (!string.IsNullOrWhiteSpace(avviso))
         {
             <div class="alert alert-info">
                 <span>@avviso</span>
-                <button type="button" class="alert-close" @onclick="ChiudiAvviso" aria-label="Chiudi messaggio">✕</button>
+                <button type="button" class="alert-close" @onclick="() => avviso = null" aria-label="Chiudi messaggio">✕</button>
             </div>
         }
 
         <div class="game-grid">
             <main class="game-main">
-                @if (p.Fase == FasePartita.NotteIntro)
+                @if (!stanza.Avviata)
+                {
+                    <div class="card lobby-card">
+                        <div class="stage-head">
+                            <div class="stage-icon">🏠</div>
+                            <div>
+                                <p class="eyebrow">Stanza @stanza.Codice</p>
+                                <h2>La tavola è pronta</h2>
+                                <p class="muted">Fai entrare i giocatori dai loro telefoni, poi avvia la partita.</p>
+                            </div>
+                        </div>
+
+                        <div class="join-banner">
+                            <div class="join-banner-main">
+                                <span class="join-label">Codice</span>
+                                <strong class="join-code">@stanza.Codice</strong>
+                            </div>
+                            <div class="join-banner-url">
+                                <span class="join-label">Link per i telefoni</span>
+                                <code>@JoinUrl</code>
+                            </div>
+                            <button type="button" class="btn btn-ghost btn-sm" @onclick="CopiaLink">Copia link</button>
+                        </div>
+
+                        <div class="lobby-progress">
+                            <span>@posti.Count(x => x.Occupato) / @posti.Count posti occupati</span>
+                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@posti.Count" aria-valuenow="@posti.Count(x => x.Occupato)">
+                                <div style="width: @Percentuale(posti.Count(x => x.Occupato), posti.Count)%"></div>
+                            </div>
+                        </div>
+
+                        <div class="lobby-seats">
+                            @foreach (var posto in posti)
+                            {
+                                <div class="lobby-seat @(posto.Occupato ? "ready" : "")">
+                                    <span class="avatar">@posto.Iniziali</span>
+                                    <div class="lobby-seat-body">
+                                        <strong>@posto.Nome</strong>
+                                        <span>@(posto.Occupato ? "connesso" : "in attesa")</span>
+                                    </div>
+                                    @if (posto.Occupato)
+                                    {
+                                        <button type="button" class="btn btn-ghost btn-sm" @onclick="() => LiberaPosto(posto.GiocatoreId)">
+                                            Libera
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <div class="stage-actions">
+                            <button type="button" class="btn btn-primary" @onclick="AvviaStanza">
+                                Avvia la partita
+                            </button>
+                            <button type="button" class="btn btn-ghost" @onclick="ApriModaleRuoli">
+                                Controlla i ruoli
+                            </button>
+                        </div>
+
+                        <p class="micro">
+                            Puoi avviare anche se manca qualcuno: potrà entrare dopo.
+                            I ruoli restano nascosti sui telefoni finché non avvii.
+                        </p>
+                    </div>
+                }
+                else if (p.Fase == FasePartita.NotteIntro)
                 {
                     <div class="card intro-card">
                         <div class="stage-head">
@@ -98,7 +175,7 @@ else
                             <div>
                                 <p class="eyebrow">Turno @p.Turno</p>
                                 <h2>Preparazione della notte</h2>
-                                <p class="muted">Rivela il ruolo a ogni giocatore, poi chiama il villaggio a dormire.</p>
+                                <p class="muted">I telefoni mostrano già il ruolo. Chiama il villaggio a dormire.</p>
                             </div>
                         </div>
 
@@ -156,18 +233,25 @@ else
                                     <p>@passo.Risultato</p>
                                 </div>
                                 <div class="stage-actions">
-                                    <button type="button" class="btn btn-primary" @onclick="ConfermaRisultato">Conferma e prosegui</button>
+                                    <button type="button" class="btn btn-primary" @onclick="ConfermaRisultatoNarratore">
+                                        Conferma e prosegui
+                                    </button>
                                 </div>
                             }
                             else
                             {
+                                <p class="muted small step-actor">
+                                    @AttorePasso(passo). Il giocatore può agire dal telefono;
+                                    in alternativa scegli tu il bersaglio qui.
+                                </p>
+
                                 <PlayerPicker Giocatori="GiocatoriPasso"
                                               SelezionatoId="@selezionatoId"
                                               OnSeleziona="Seleziona"
                                               MostraRuoli="mostraRuoli" />
 
                                 <div class="stage-actions">
-                                    <button type="button" class="btn btn-primary" @onclick="EseguiPasso" disabled="@(selezionatoId == null)">
+                                    <button type="button" class="btn btn-primary" @onclick="EseguiPassoNarratore" disabled="@(selezionatoId == null)">
                                         Conferma scelta
                                     </button>
                                     @if (passo.Tipo == TipoPasso.Capobranco)
@@ -224,10 +308,10 @@ else
                                             }
                                             else
                                             {
-                                                <p class="muted">@(s.Completato ? "Completato" : "In attesa")</p>
+                                                <p class="muted">@(s.Completato ? "Completato" : s == p.PassoCorrente ? $"Tocca a {AttoreBreve(s)}" : "In attesa")</p>
                                             }
                                         </div>
-                                        <span class="step-row-state" aria-hidden="true">@(s.Completato ? "✓" : "…")</span>
+                                        <span class="step-row-state" aria-hidden="true">@(s.Completato ? "✓" : s == p.PassoCorrente ? "▶" : "…")</span>
                                     </div>
                                 }
                             </div>
@@ -297,6 +381,13 @@ else
                             }
                         }
 
+                        <label class="toggle">
+                            <input type="checkbox"
+                                   checked="@stanza.RivelaRuoliMorti"
+                                   @onchange="OnRivelaRuoliMortiChanged" />
+                            <span>Rivela ai telefoni i ruoli dei caduti</span>
+                        </label>
+
                         <div class="stage-actions">
                             <button type="button" class="btn btn-primary" @onclick="VaiAlGiorno">
                                 @(p.Esito == null ? "Vai alla discussione" : "Vedi il risultato finale")
@@ -350,7 +441,7 @@ else
                             <div>
                                 <p class="eyebrow">Turno @p.Turno</p>
                                 <h2>Chi va al rogo?</h2>
-                                <p class="muted">Raccogli il voto del villaggio. Se il Gufo ha mandato qualcuno al ballottaggio, si aprirà il ballottaggio.</p>
+                                <p class="muted">I telefoni votano in tempo reale. Tu chiudi quando siete pronti.</p>
                             </div>
                         </div>
 
@@ -361,20 +452,56 @@ else
                             </div>
                         }
 
-                        <PlayerPicker Giocatori="GiocatoriVivi"
-                                      SelezionatoId="@selezionatoId"
-                                      OnSeleziona="Seleziona"
-                                      MostraRuoli="mostraRuoli" />
+                        <div class="vote-live">
+                            <div class="vote-progress">
+                                <span>@VotantiVoto / @p.TotaleVivi hanno votato</span>
+                                <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@p.TotaleVivi" aria-valuenow="@VotantiVoto">
+                                    <div style="width: @Percentuale(VotantiVoto, p.TotaleVivi)%"></div>
+                                </div>
+                            </div>
 
-                        <div class="stage-actions">
-                            <button type="button" class="btn btn-primary" @onclick="Vota" disabled="@(selezionatoId == null)">
-                                Conferma il voto
-                            </button>
-                            @if (selezionatoId != null)
-                            {
-                                <span class="muted small">Voto selezionato: <strong>@p.NomeDi(selezionatoId)</strong></span>
-                            }
+                            <VoteTally Conteggi="ConteggiVoto"
+                                       NonVotanti="NonVotantiVoto"
+                                       Votanti="@VotantiVoto"
+                                       Vivi="@p.TotaleVivi" />
                         </div>
+
+                        @if (stanza.VotoPareggio)
+                        {
+                            <div class="tie-panel">
+                                <strong>Pareggio: scegli chi va al rogo</strong>
+                                <div class="tie-actions">
+                                    @foreach (var id in stanza.CandidatiPareggio)
+                                    {
+                                        <button type="button" class="btn btn-primary btn-sm" @onclick="() => ChiudiVoto(id)">
+                                            @p.NomeDi(id)
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="host-vote-actions">
+                                <button type="button" class="btn btn-primary" @onclick="() => ChiudiVoto(null)">
+                                    Chiudi il voto
+                                </button>
+                            </div>
+
+                            <div class="force-vote">
+                                <p class="muted small">
+                                    Se un telefono non riesce a votare, puoi forzare il rogo.
+                                    Scegli un giocatore vivo e conferma.
+                                </p>
+                                <PlayerPicker Giocatori="GiocatoriVivi"
+                                              SelezionatoId="@selezionatoId"
+                                              OnSeleziona="Seleziona"
+                                              MostraRuoli="mostraRuoli" />
+                                <button type="button" class="btn btn-ghost" @onclick="() => ChiudiVoto(selezionatoId)" disabled="@(selezionatoId == null)">
+                                    Forza il rogo
+                                </button>
+                            </div>
+                        }
                     </div>
                 }
                 else if (p.Fase == FasePartita.Ballottaggio)
@@ -385,7 +512,7 @@ else
                             <div>
                                 <p class="eyebrow">Turno @p.Turno</p>
                                 <h2>Ballottaggio</h2>
-                                <p class="muted">Scegli chi va al rogo tra i candidati.</p>
+                                <p class="muted">I telefoni scelgono tra i candidati. Chiudi quando siete pronti.</p>
                             </div>
                         </div>
 
@@ -398,16 +525,53 @@ else
                             }
                         </div>
 
-                        <PlayerPicker Giocatori="GiocatoriBallottaggio"
-                                      SelezionatoId="@selezionatoId"
-                                      OnSeleziona="Seleziona"
-                                      MostraRuoli="mostraRuoli" />
+                        <div class="vote-live">
+                            <div class="vote-progress">
+                                <span>@VotantiBallottaggio / @p.TotaleVivi hanno votato</span>
+                                <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@p.TotaleVivi" aria-valuenow="@VotantiBallottaggio">
+                                    <div style="width: @Percentuale(VotantiBallottaggio, p.TotaleVivi)%"></div>
+                                </div>
+                            </div>
 
-                        <div class="stage-actions">
-                            <button type="button" class="btn btn-primary" @onclick="ScegliBallottaggio" disabled="@(selezionatoId == null)">
-                                Manda al rogo
-                            </button>
+                            <VoteTally Conteggi="ConteggiBallottaggio"
+                                       NonVotanti="NonVotantiBallottaggio"
+                                       Votanti="@VotantiBallottaggio"
+                                       Vivi="@p.TotaleVivi" />
                         </div>
+
+                        @if (stanza.BallottaggioPareggio)
+                        {
+                            <div class="tie-panel">
+                                <strong>Pareggio: scegli chi va al rogo</strong>
+                                <div class="tie-actions">
+                                    @foreach (var id in stanza.CandidatiPareggioBallottaggio)
+                                    {
+                                        <button type="button" class="btn btn-primary btn-sm" @onclick="() => ChiudiBallottaggio(id)">
+                                            @p.NomeDi(id)
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="host-vote-actions">
+                                <button type="button" class="btn btn-primary" @onclick="() => ChiudiBallottaggio(null)">
+                                    Chiudi il ballottaggio
+                                </button>
+                            </div>
+
+                            <div class="force-vote">
+                                <p class="muted small">Forza la scelta tra i candidati, se serve.</p>
+                                <PlayerPicker Giocatori="GiocatoriBallottaggio"
+                                              SelezionatoId="@selezionatoId"
+                                              OnSeleziona="Seleziona"
+                                              MostraRuoli="mostraRuoli" />
+                                <button type="button" class="btn btn-ghost" @onclick="() => ChiudiBallottaggio(selezionatoId)" disabled="@(selezionatoId == null)">
+                                    Forza il rogo
+                                </button>
+                            </div>
+                        }
                     </div>
                 }
                 else if (p.Fase == FasePartita.Esecuzione)
@@ -441,6 +605,13 @@ else
                             <p class="muted">Nessun condannato registrato per questo turno.</p>
                         }
 
+                        <label class="toggle">
+                            <input type="checkbox"
+                                   checked="@stanza.RivelaRuoloRogo"
+                                   @onchange="OnRivelaRuoloRogoChanged" />
+                            <span>Rivela ai telefoni il ruolo del condannato</span>
+                        </label>
+
                         <div class="alive-strip">
                             @foreach (var g in GiocatoriVivi)
                             {
@@ -469,7 +640,7 @@ else
                             <div><strong>@p.TotaleVivi</strong><span>superstiti</span></div>
                         </div>
                         <div class="winner-actions">
-                            <button type="button" class="btn btn-primary" @onclick="NuovaPartita">Nuova partita</button>
+                            <button type="button" class="btn btn-primary" @onclick="ChiudiStanza">Chiudi la stanza</button>
                             <button type="button" class="btn btn-ghost" @onclick="Esporta">Esporta riepilogo</button>
                         </div>
                     </section>
@@ -502,10 +673,13 @@ else
             </main>
 
             <aside class="game-aside">
-                <TimerCountdown @key="TimerKey"
-                                Etichetta="@EtichettaTimer"
-                                DurataIniziale="@p.TimerSecondi"
-                                OnDurataCambiata="AggiornaDurataTimer" />
+                @if (stanza.Avviata)
+                {
+                    <TimerCountdown @key="TimerKey"
+                                    Etichetta="@EtichettaTimer"
+                                    DurataIniziale="@p.TimerSecondi"
+                                    OnDurataCambiata="AggiornaDurataTimer" />
+                }
 
                 <div class="card players-card">
                     <div class="card-head compact">
@@ -532,6 +706,10 @@ else
                                     }
                                 </span>
                                 <span class="player-row-badges">
+                                    @if (Connesso(g.Id))
+                                    {
+                                        <span title="Telefono collegato">📱</span>
+                                    }
                                     @if (mostraRuoli && g.Capobranco)
                                     {
                                         <span title="Capobranco">👑</span>
@@ -560,6 +738,24 @@ else
                     <button type="button" class="btn btn-ghost btn-block btn-sm" @onclick="ApriModaleRuoli">
                         Rivela ruoli ai giocatori
                     </button>
+                </div>
+
+                <div class="card room-card">
+                    <div class="card-head compact">
+                        <h2>Stanza</h2>
+                        <span class="pill">@stanza.Codice</span>
+                    </div>
+
+                    <p class="muted small">Link per i telefoni</p>
+                    <code class="room-link">@JoinUrl</code>
+
+                    <div class="room-actions">
+                        <button type="button" class="btn btn-ghost btn-block btn-sm" @onclick="CopiaLink">Copia link</button>
+                        <button type="button" class="btn btn-ghost btn-block btn-sm" @onclick="Esporta">Esporta JSON</button>
+                        <button type="button" class="btn btn-danger btn-block btn-sm" @onclick="ChiudiStanza">Chiudi stanza</button>
+                    </div>
+
+                    <p class="micro">La stanza vive sul server. Se lo riavvii, esporta prima il JSON.</p>
                 </div>
 
                 <div class="card log-card">
@@ -594,38 +790,6 @@ else
                             </div>
                         }
                     </div>
-                </div>
-
-                <div class="card save-card">
-                    <div class="card-head compact">
-                        <h2>Salvataggio</h2>
-                        <span class="muted">@(salvataggioInCorso ? "In corso..." : "Auto")</span>
-                    </div>
-
-                    <p class="muted small">
-                        @if (ultimoSalvataggio is { } salvata)
-                        {
-                            <text>Ultimo salvataggio: @salvata.ToString("HH:mm:ss")</text>
-                        }
-                        else
-                        {
-                            <text>Salvataggio automatico attivo.</text>
-                        }
-                    </p>
-
-                    <div class="save-actions">
-                        <button type="button" class="btn btn-ghost btn-block" @onclick="SalvaManuale" disabled="@salvataggioInCorso">
-                            Salva ora
-                        </button>
-                        <button type="button" class="btn btn-ghost btn-block" @onclick="Esporta">Esporta JSON</button>
-                        <label class="btn btn-ghost btn-block file-btn">
-                            Importa JSON
-                            <InputFile OnChange="ImportaAsync" accept=".json,application/json" />
-                        </label>
-                        <button type="button" class="btn btn-danger btn-block" @onclick="NuovaPartita">Abbandona partita</button>
-                    </div>
-
-                    <p class="micro">I dati restano nel browser. Esporta il JSON per un backup o per cambiare dispositivo.</p>
                 </div>
             </aside>
         </div>
@@ -703,38 +867,45 @@ else
         ("morti", "Morti")
     };
 
-    private Partita? partita;
+    [Parameter] public string Codice { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "h")] public string? HostTokenQuery { get; set; }
+
+    private Stanza? stanza;
+    private string? hostToken;
     private bool caricamento = true;
-    private bool mostraRuoli;
+    private bool accessoNegato;
+    private bool sottoscritto;
+    private bool mostraRuoli = true;
     private bool mostraModaleRuolo;
     private Giocatore? giocatoreRivelato;
     private readonly HashSet<string> ruoliRivelati = new();
     private string? selezionatoId;
     private string? errore;
     private string? avviso;
-    private bool salvataggioInCorso;
-    private DateTime? ultimoSalvataggio;
     private string filtroLog = "tutto";
     private int timerReset;
     private int logCountPrecedente = -1;
+    private List<PostoStanza> posti = new();
 
-    private string TitoloPagina => partita == null ? "Partita" : $"Turno {partita.Turno}";
+    private Partita? P => stanza?.Partita;
+
+    private string TitoloPagina => P == null ? "Partita" : $"Turno {P.Turno}";
 
     private string TitoloFase
     {
         get
         {
-            if (partita == null) return "Partita";
-            return partita.Fase switch
+            if (P == null) return "Partita";
+            return P.Fase switch
             {
-                FasePartita.NotteIntro => "Preparazione della notte",
-                FasePartita.Notte => $"Notte {partita.Turno}",
+                FasePartita.NotteIntro => stanza?.Avviata == true ? "Preparazione della notte" : "Lobby",
+                FasePartita.Notte => $"Notte {P.Turno}",
                 FasePartita.Alba => "Alba",
                 FasePartita.Giorno => "Discussione",
                 FasePartita.Voto => "Votazione",
                 FasePartita.Ballottaggio => "Ballottaggio",
                 FasePartita.Esecuzione => "Fine del turno",
-                FasePartita.Finita => Testi.TitoloVittoria(partita.Esito),
+                FasePartita.Finita => Testi.TitoloVittoria(P.Esito),
                 _ => "Partita"
             };
         }
@@ -744,17 +915,18 @@ else
     {
         get
         {
-            if (partita == null) return "";
-            return partita.Fase switch
+            if (P == null) return "";
+            if (stanza?.Avviata == false) return "Aspetta i telefoni, poi avvia la partita.";
+            return P.Fase switch
             {
                 FasePartita.NotteIntro => "Rivela i ruoli, poi chiama il villaggio a dormire.",
-                FasePartita.Notte => "Segui i passi in ordine di priorità. Il narratore vede tutto.",
+                FasePartita.Notte => "Segui i passi in ordine di priorità. I giocatori agiscono dal telefono.",
                 FasePartita.Alba => "Annuncia i morti e gli eventi pubblici.",
                 FasePartita.Giorno => "Il villaggio discute. Usa il timer per tenere il ritmo.",
-                FasePartita.Voto => "Raccogli il voto del villaggio.",
+                FasePartita.Voto => "Raccogli i voti dei telefoni e chiudi quando siete pronti.",
                 FasePartita.Ballottaggio => "Scegli tra i candidati mandati al ballottaggio.",
                 FasePartita.Esecuzione => "Il rogo è concluso. Prepara la prossima notte.",
-                FasePartita.Finita => Testi.SottotitoloVittoria(partita.Esito),
+                FasePartita.Finita => Testi.SottotitoloVittoria(P.Esito),
                 _ => ""
             };
         }
@@ -764,8 +936,8 @@ else
     {
         get
         {
-            if (partita == null) return "Timer";
-            return partita.Fase switch
+            if (P == null) return "Timer";
+            return P.Fase switch
             {
                 FasePartita.Notte => "Azioni notturne",
                 FasePartita.Giorno => "Discussione",
@@ -776,57 +948,45 @@ else
         }
     }
 
-    private string TimerKey => $"{partita?.Id}-{partita?.Turno}-{partita?.Fase}-{timerReset}";
+    private string TimerKey => $"{stanza?.Codice}-{P?.Turno}-{P?.Fase}-{timerReset}";
 
-    private int PassiTotali => partita?.PassiNotte.Count ?? 0;
+    private string JoinUrl => stanza == null ? "" : Rete.UrlEntra(stanza.Codice);
 
-    private int PassiCompletati => partita?.PassiNotte.Count(x => x.Completato) ?? 0;
+    private int PassiTotali => P?.PassiNotte.Count ?? 0;
 
-    private int PercentualePassi => PassiTotali == 0
-        ? 0
-        : (int)Math.Round(100.0 * PassiCompletati / PassiTotali);
+    private int PassiCompletati => P?.PassiNotte.Count(x => x.Completato) ?? 0;
 
-    private RisultatoNotte? Risultato => partita?.RisultatoNotte;
+    private int PercentualePassi => Percentuale(PassiCompletati, PassiTotali);
 
-    private Giocatore? UltimoRogo => partita == null ? null : partita.Giocatore(partita.UltimoRogoId);
+    private RisultatoNotte? Risultato => P?.RisultatoNotte;
 
-    private IEnumerable<IGrouping<Ruolo, Giocatore>> Composizione
-    {
-        get
-        {
-            if (partita == null) return Enumerable.Empty<IGrouping<Ruolo, Giocatore>>();
-            return partita.Giocatori.GroupBy(g => g.Ruolo);
-        }
-    }
+    private Giocatore? UltimoRogo => P?.Giocatore(P.UltimoRogoId);
+
+    private IEnumerable<IGrouping<Ruolo, Giocatore>> Composizione =>
+        P?.Giocatori.GroupBy(g => g.Ruolo) ?? Enumerable.Empty<IGrouping<Ruolo, Giocatore>>();
 
     private string ComposizioneTesto
     {
         get
         {
-            if (partita == null) return "";
-            return string.Join(" · ", partita.Giocatori
+            if (P == null) return "";
+            return string.Join(" · ", P.Giocatori
                 .GroupBy(g => g.Ruolo)
                 .OrderBy(g => Ruoli.Info(g.Key).Priorita)
                 .Select(g => $"{Ruoli.Nome(g.Key)} x{g.Count()}"));
         }
     }
 
-    private List<Giocatore> GiocatoriVivi
-    {
-        get
-        {
-            if (partita == null) return new();
-            return partita.Vivi.OrderBy(g => g.Nome).ToList();
-        }
-    }
+    private List<Giocatore> GiocatoriVivi =>
+        P?.Vivi.OrderBy(g => g.Nome).ToList() ?? new();
 
     private List<Giocatore> GiocatoriPasso
     {
         get
         {
-            if (partita == null || partita.PassoCorrente is not { } passo) return new();
+            if (P?.PassoCorrente is not { } passo) return new();
             return passo.OpzioniIds
-                .Select(id => partita.Giocatore(id))
+                .Select(id => P.Giocatore(id))
                 .OfType<Giocatore>()
                 .ToList();
         }
@@ -836,27 +996,19 @@ else
     {
         get
         {
-            if (partita == null) return new();
-            return partita.BallottaggioIds
-                .Select(id => partita.Giocatore(id))
+            if (P == null) return new();
+            return P.BallottaggioIds
+                .Select(id => P.Giocatore(id))
                 .OfType<Giocatore>()
                 .Where(g => g.Vivo)
                 .ToList();
         }
     }
 
-    private List<Giocatore> Gufati
-    {
-        get
-        {
-            if (partita == null) return new();
-            return partita.BallottaggioIds
-                .Select(id => partita.Giocatore(id))
-                .OfType<Giocatore>()
-                .Where(g => g.Vivo)
-                .ToList();
-        }
-    }
+    private List<Giocatore> Gufati =>
+        P?.Fase is FasePartita.Alba or FasePartita.Giorno or FasePartita.Voto
+            ? GiocatoriBallottaggio
+            : new List<Giocatore>();
 
     private string NomiGufati => string.Join(", ", Gufati.Select(g => g.Nome));
 
@@ -864,39 +1016,27 @@ else
     {
         get
         {
-            if (partita == null || partita.RisultatoNotte == null) return new();
-            return partita.RisultatoNotte.MortiIds
-                .Select(id => partita.Giocatore(id))
+            if (P?.RisultatoNotte == null) return new();
+            return P.RisultatoNotte.MortiIds
+                .Select(id => P.Giocatore(id))
                 .OfType<Giocatore>()
                 .ToList();
         }
     }
 
-    private IEnumerable<EventoNotte> EventiPubblici
-    {
-        get
-        {
-            if (partita == null || partita.RisultatoNotte == null) return Enumerable.Empty<EventoNotte>();
-            return partita.RisultatoNotte.Eventi.Where(e => !e.Riservato);
-        }
-    }
+    private IEnumerable<EventoNotte> EventiPubblici =>
+        P?.RisultatoNotte?.Eventi.Where(e => !e.Riservato) ?? Enumerable.Empty<EventoNotte>();
 
-    private IEnumerable<EventoNotte> EventiRiservati
-    {
-        get
-        {
-            if (partita == null || partita.RisultatoNotte == null) return Enumerable.Empty<EventoNotte>();
-            return partita.RisultatoNotte.Eventi.Where(e => e.Riservato);
-        }
-    }
+    private IEnumerable<EventoNotte> EventiRiservati =>
+        P?.RisultatoNotte?.Eventi.Where(e => e.Riservato) ?? Enumerable.Empty<EventoNotte>();
 
     private IEnumerable<VoceLog> LogFiltrato
     {
         get
         {
-            if (partita == null) return Enumerable.Empty<VoceLog>();
+            if (P == null) return Enumerable.Empty<VoceLog>();
 
-            IEnumerable<VoceLog> voci = partita.Log;
+            IEnumerable<VoceLog> voci = P.Log;
             voci = filtroLog switch
             {
                 "notte" => voci.Where(v => v.Tipo is TipoLog.Notte or TipoLog.Potere),
@@ -909,37 +1049,66 @@ else
         }
     }
 
+    private int VotantiVoto => stanza?.SnapshotVoti().Count ?? 0;
+
+    private int VotantiBallottaggio => stanza?.SnapshotVotiBallottaggio().Count ?? 0;
+
+    private List<ConteggioVoto> ConteggiVoto => CalcolaConteggi(stanza?.SnapshotVoti());
+
+    private List<ConteggioVoto> ConteggiBallottaggio => CalcolaConteggi(stanza?.SnapshotVotiBallottaggio());
+
+    private List<string> NonVotantiVoto => CalcolaNonVotanti(stanza?.SnapshotVoti());
+
+    private List<string> NonVotantiBallottaggio => CalcolaNonVotanti(stanza?.SnapshotVotiBallottaggio());
+
     protected override void OnInitialized()
     {
-        partita = PartitaSvc.Corrente;
-        if (partita != null)
-        {
+        stanza = Stanze.Ottieni(Codice);
+        if (stanza == null)
             caricamento = false;
-            ultimoSalvataggio = partita.SalvataIl;
-        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            if (partita == null)
+            if (stanza != null)
             {
-                partita = await Archivio.CaricaAsync();
-                if (partita != null)
+                hostToken = HostTokenQuery;
+
+                if (string.IsNullOrWhiteSpace(hostToken))
                 {
-                    PartitaSvc.Corrente = partita;
-                    ultimoSalvataggio = partita.SalvataIl;
+                    var sessione = await Sessioni.TrovaAsync(Codice, TipoSessione.Host);
+                    hostToken = sessione?.Token;
                 }
+
+                if (string.IsNullOrWhiteSpace(hostToken) || !Stanze.ValidaHost(stanza, hostToken))
+                {
+                    accessoNegato = true;
+                    caricamento = false;
+                    StateHasChanged();
+                    return;
+                }
+
+                await Sessioni.SalvaAsync(new SessioneBrowser
+                {
+                    Codice = Codice,
+                    Tipo = TipoSessione.Host,
+                    Token = hostToken
+                });
+
+                Stanze.Sottoscrivi(Codice, OnStanzaAggiornata);
+                sottoscritto = true;
+                AggiornaVista();
             }
 
             caricamento = false;
             StateHasChanged();
         }
 
-        if (partita != null && partita.Log.Count != logCountPrecedente)
+        if (P != null && P.Log.Count != logCountPrecedente)
         {
-            logCountPrecedente = partita.Log.Count;
+            logCountPrecedente = P.Log.Count;
             try
             {
                 await JS.InvokeVoidAsync("lupusStorage.scrollLog");
@@ -951,11 +1120,35 @@ else
         }
     }
 
+    private void AggiornaVista()
+    {
+        if (stanza == null) return;
+
+        var corrente = Stanze.Ottieni(stanza.Codice);
+        if (corrente == null)
+        {
+            stanza = null;
+            return;
+        }
+
+        stanza = corrente;
+        posti = Stanze.PostiPubblici(stanza).ToList();
+    }
+
+    private async Task OnStanzaAggiornata()
+    {
+        await InvokeAsync(() =>
+        {
+            AggiornaVista();
+            StateHasChanged();
+        });
+    }
+
     private string ClasseFase(FasePartita fase)
     {
-        if (partita == null) return "todo";
+        if (P == null) return "todo";
 
-        var corrente = Array.IndexOf(Fasi, partita.Fase);
+        var corrente = Array.IndexOf(Fasi, P.Fase);
         var indice = Array.IndexOf(Fasi, fase);
 
         if (indice == corrente) return "current";
@@ -994,15 +1187,33 @@ else
         };
     }
 
+    private string AttoreBreve(PassoNotte passo)
+    {
+        if (P == null) return "?";
+        if (passo.Tipo == TipoPasso.Capobranco) return "tutti i lupi";
+        if (passo.Potere == Potere.Lupo) return "il branco";
+        return P.NomeDi(passo.AttoreId);
+    }
+
+    private string AttorePasso(PassoNotte passo)
+    {
+        if (passo.Tipo == TipoPasso.Capobranco)
+            return "Elezioni del capobranco: decidono tutti i lupi.";
+
+        if (passo.Potere == Potere.Lupo)
+            return "Azione del branco.";
+
+        return $"Azione di {AttoreBreve(passo)}.";
+    }
+
+    private bool Connesso(string giocatoreId) =>
+        posti.FirstOrDefault(p => p.GiocatoreId == giocatoreId)?.Occupato == true;
+
     private bool Rivelato(Giocatore g) => ruoliRivelati.Contains(g.Id);
 
     private void ToggleMostraRuoli() => mostraRuoli = !mostraRuoli;
 
     private void ImpostaFiltro(string chiave) => filtroLog = chiave;
-
-    private void ChiudiErrore() => errore = null;
-
-    private void ChiudiAvviso() => avviso = null;
 
     private void ApriModaleRuoli()
     {
@@ -1038,19 +1249,57 @@ else
         return Task.CompletedTask;
     }
 
-    private async Task IniziaNotte()
+    private async Task AvviaStanza()
     {
-        if (partita == null) return;
-
-        errore = null;
-        MotoreLupus.IniziaNotte(partita);
-        selezionatoId = null;
-        await SalvaAsync();
+        await EseguiHost(
+            () => Stanze.AvviaAsync(stanza!, hostToken!),
+            "Partita avviata: i telefoni mostrano i ruoli.");
     }
 
-    private async Task EseguiPasso()
+    private async Task IniziaNotte()
     {
-        if (partita?.PassoCorrente is not { } passo) return;
+        selezionatoId = null;
+        await EseguiHost(
+            () => Stanze.IniziaNotteAsync(stanza!, hostToken!),
+            "La notte è calata.");
+    }
+
+    private async Task RisolviNotte()
+    {
+        selezionatoId = null;
+        await EseguiHost(
+            () => Stanze.RisolviNotteAsync(stanza!, hostToken!),
+            "Notte risolta.");
+    }
+
+    private async Task VaiAlGiorno()
+    {
+        selezionatoId = null;
+        await EseguiHost(
+            () => Stanze.VaiAlGiornoAsync(stanza!, hostToken!),
+            "Il villaggio è sveglio.");
+    }
+
+    private async Task ApriVoto()
+    {
+        selezionatoId = null;
+        await EseguiHost(
+            () => Stanze.ApriVotoAsync(stanza!, hostToken!),
+            "Voto aperto: i telefoni possono votare.");
+    }
+
+    private async Task ProssimaNotte()
+    {
+        selezionatoId = null;
+        timerReset++;
+        await EseguiHost(
+            () => Stanze.ProssimaNotteAsync(stanza!, hostToken!),
+            "Turno successivo.");
+    }
+
+    private async Task EseguiPassoNarratore()
+    {
+        if (P?.PassoCorrente is not { } passo) return;
 
         if (string.IsNullOrWhiteSpace(selezionatoId))
         {
@@ -1058,209 +1307,196 @@ else
             return;
         }
 
-        errore = null;
-        var esito = MotoreLupus.EseguiPasso(partita, passo.Id, selezionatoId);
-        if (!esito.Ok)
-        {
-            errore = esito.Errore;
-            return;
-        }
+        var bersaglio = selezionatoId;
+        await EseguiHost(
+            () => Stanze.EseguiPassoNarratoreAsync(stanza!, hostToken!, passo.Id, bersaglio),
+            "Azione registrata.");
 
         selezionatoId = null;
-        await SalvaAsync();
     }
 
-    private async Task ConfermaRisultato()
+    private async Task ConfermaRisultatoNarratore()
     {
-        if (partita?.PassoCorrente is not { } passo) return;
+        if (P?.PassoCorrente is not { } passo) return;
 
-        MotoreLupus.ConfermaRisultato(partita, passo.Id);
-        selezionatoId = null;
-        await SalvaAsync();
+        await EseguiHost(
+            () => Stanze.ConfermaRisultatoNarratoreAsync(stanza!, hostToken!, passo.Id),
+            "Risultato confermato.");
     }
 
-    private async Task RisolviNotte()
+    private async Task LiberaPosto(string giocatoreId)
     {
-        if (partita == null) return;
-
-        errore = null;
-        var esito = MotoreLupus.RisolviNotte(partita);
-        if (!esito.Ok)
-        {
-            errore = esito.Errore;
-            return;
-        }
-
-        selezionatoId = null;
-        await SalvaAsync();
+        await EseguiHost(
+            () => Stanze.LiberaPostoAsync(stanza!, hostToken!, giocatoreId),
+            "Posto liberato: il giocatore può rientrare.");
     }
 
-    private async Task VaiAlGiorno()
+    private async Task ChiudiVoto(string? scelta)
     {
-        if (partita == null) return;
-
-        MotoreLupus.VaiAlGiorno(partita);
-        selezionatoId = null;
-        await SalvaAsync();
-    }
-
-    private async Task ApriVoto()
-    {
-        if (partita == null) return;
-
-        MotoreLupus.ApriVoto(partita);
-        selezionatoId = null;
-        await SalvaAsync();
-    }
-
-    private async Task Vota()
-    {
-        if (partita == null || string.IsNullOrWhiteSpace(selezionatoId)) return;
+        if (stanza == null) return;
 
         errore = null;
-        var esito = MotoreLupus.Vota(partita, selezionatoId);
-        if (!esito.Ok)
+        try
         {
-            errore = esito.Errore;
-            return;
+            var risultato = await Stanze.ChiudiVotoAsync(stanza, hostToken!, scelta);
+            if (!risultato.Ok)
+            {
+                errore = risultato.Errore;
+            }
+            else
+            {
+                avviso = risultato.Messaggio;
+                selezionatoId = null;
+            }
         }
-
-        selezionatoId = null;
-        await SalvaAsync();
+        finally
+        {
+            AggiornaVista();
+            StateHasChanged();
+        }
     }
 
-    private async Task ScegliBallottaggio()
+    private async Task ChiudiBallottaggio(string? scelta)
     {
-        if (partita == null || string.IsNullOrWhiteSpace(selezionatoId)) return;
+        if (stanza == null) return;
 
         errore = null;
-        var esito = MotoreLupus.ScegliBallottaggio(partita, selezionatoId);
-        if (!esito.Ok)
+        try
         {
-            errore = esito.Errore;
-            return;
+            var risultato = await Stanze.ChiudiBallottaggioAsync(stanza, hostToken!, scelta);
+            if (!risultato.Ok)
+            {
+                errore = risultato.Errore;
+            }
+            else
+            {
+                avviso = risultato.Messaggio;
+                selezionatoId = null;
+            }
         }
-
-        selezionatoId = null;
-        await SalvaAsync();
+        finally
+        {
+            AggiornaVista();
+            StateHasChanged();
+        }
     }
 
-    private async Task ProssimaNotte()
+    private async Task OnRivelaRuoliMortiChanged(ChangeEventArgs e)
     {
-        if (partita == null) return;
+        if (stanza == null) return;
+        var valore = LeggiBool(e.Value);
+        await EseguiHost(
+            () => Stanze.ImpostaRivelaRuoliMortiAsync(stanza, hostToken!, valore),
+            valore ? "Ruoli dei caduti rivelati ai telefoni." : "Ruoli dei caduti nascosti.");
+    }
 
-        MotoreLupus.ProssimaNotte(partita);
-        selezionatoId = null;
-        timerReset++;
-        await SalvaAsync();
+    private async Task OnRivelaRuoloRogoChanged(ChangeEventArgs e)
+    {
+        if (stanza == null) return;
+        var valore = LeggiBool(e.Value);
+        await EseguiHost(
+            () => Stanze.ImpostaRivelaRuoloRogoAsync(stanza, hostToken!, valore),
+            valore ? "Ruolo del condannato rivelato ai telefoni." : "Ruolo del condannato nascosto.");
     }
 
     private async Task AggiornaDurataTimer(int secondi)
     {
-        if (partita == null) return;
-
-        partita.TimerSecondi = secondi;
-        await SalvaAsync();
+        if (stanza == null) return;
+        await EseguiHost(() => Stanze.ImpostaDurataTimerAsync(stanza, hostToken!, secondi));
     }
 
-    private async Task SalvaManuale() => await SalvaAsync(true);
-
-    private async Task SalvaAsync(bool conferma = false)
+    private static bool LeggiBool(object? valore) => valore switch
     {
-        if (partita == null) return;
+        bool b => b,
+        string s when bool.TryParse(s, out var parsed) => parsed,
+        _ => false
+    };
 
-        salvataggioInCorso = true;
-        try
-        {
-            var ok = await Archivio.SalvaAsync(partita);
-            if (ok)
-            {
-                ultimoSalvataggio = partita.SalvataIl ?? DateTime.Now;
-                if (conferma) avviso = "Partita salvata.";
-            }
-            else
-            {
-                avviso = "Il browser non permette il salvataggio locale. Esporta il JSON per non perdere la partita.";
-            }
-        }
-        catch (Exception ex)
-        {
-            avviso = $"Salvataggio non riuscito: {ex.Message}";
-        }
-        finally
-        {
-            salvataggioInCorso = false;
-        }
+    private async Task CopiaLink()
+    {
+        var ok = await Archivio.CopiaAsync(JoinUrl);
+        avviso = ok ? "Link copiato negli appunti." : "Copia non riuscita: seleziona il link manualmente.";
     }
 
     private async Task Esporta()
     {
-        if (partita == null) return;
-
-        await Archivio.ScaricaAsync(partita);
+        if (P == null) return;
+        await Archivio.ScaricaAsync(P);
         avviso = "File JSON scaricato.";
     }
 
-    private async Task ImportaAsync(InputFileChangeEventArgs e)
+    private async Task ChiudiStanza()
     {
-        errore = null;
-        avviso = null;
-
-        try
-        {
-            var file = e.File;
-            using var stream = file.OpenReadStream(maxAllowedSize: 5_000_000);
-            using var reader = new StreamReader(stream);
-            var json = await reader.ReadToEndAsync();
-
-            var importata = Serializzazione.Deserializza(json);
-            if (importata == null)
-            {
-                errore = "Il file non contiene una partita valida.";
-                return;
-            }
-
-            if (importata.Giocatori.Count == 0)
-            {
-                errore = "Il file non contiene giocatori.";
-                return;
-            }
-
-            partita = importata;
-            PartitaSvc.Corrente = importata;
-            selezionatoId = null;
-            ruoliRivelati.Clear();
-            mostraModaleRuolo = false;
-            giocatoreRivelato = null;
-            filtroLog = "tutto";
-            timerReset++;
-            ultimoSalvataggio = importata.SalvataIl;
-
-            await SalvaAsync();
-            avviso = "Partita importata correttamente.";
-        }
-        catch (Exception ex)
-        {
-            errore = $"Import non riuscito: {ex.Message}";
-        }
-    }
-
-    private async Task NuovaPartita()
-    {
-        if (partita == null)
-        {
-            Nav.NavigateTo("/");
-            return;
-        }
+        if (stanza == null) return;
 
         var conferma = await Archivio.ConfermaAsync(
-            "Vuoi abbandonare la partita corrente? Il salvataggio locale verrà cancellato.");
+            "Vuoi chiudere la stanza? I telefoni verranno disconnessi e la partita non sarà più raggiungibile.");
 
         if (!conferma) return;
 
-        await Archivio.CancellaAsync();
-        PartitaSvc.Corrente = null;
-        partita = null;
+        await Stanze.AbbandonaAsync(stanza, hostToken!);
+        await Sessioni.RimuoviAsync(stanza.Codice, TipoSessione.Host);
+        stanza = null;
         Nav.NavigateTo("/");
+    }
+
+    private async Task EseguiHost(Func<Task<EsitoPasso>> azione, string? messaggio = null)
+    {
+        errore = null;
+
+        try
+        {
+            var esito = await azione();
+            if (!esito.Ok)
+                errore = esito.Errore;
+            else if (!string.IsNullOrWhiteSpace(messaggio))
+                avviso = messaggio;
+        }
+        catch (Exception ex)
+        {
+            errore = ex.Message;
+        }
+        finally
+        {
+            AggiornaVista();
+            StateHasChanged();
+        }
+    }
+
+    private List<ConteggioVoto> CalcolaConteggi(IReadOnlyDictionary<string, string>? voti)
+    {
+        if (P == null || voti == null || voti.Count == 0) return new();
+
+        return voti
+            .GroupBy(kv => kv.Value)
+            .Select(g => new ConteggioVoto(
+                g.Key,
+                P.NomeDi(g.Key),
+                g.Count(),
+                g.Select(kv => P.NomeDi(kv.Key)).OrderBy(n => n).ToList()))
+            .OrderByDescending(c => c.Voti)
+            .ThenBy(c => c.Nome)
+            .ToList();
+    }
+
+    private List<string> CalcolaNonVotanti(IReadOnlyDictionary<string, string>? voti)
+    {
+        if (P == null) return new();
+        var espressi = voti ?? new Dictionary<string, string>();
+
+        return P.Vivi
+            .Where(g => !espressi.ContainsKey(g.Id))
+            .Select(g => g.Nome)
+            .OrderBy(n => n)
+            .ToList();
+    }
+
+    private static int Percentuale(int valore, int totale) =>
+        totale <= 0 ? 0 : (int)Math.Round(100.0 * valore / totale);
+
+    public void Dispose()
+    {
+        if (sottoscritto)
+            Stanze.AnnullaSottoscrizione(Codice, OnStanzaAggiornata);
     }
 }

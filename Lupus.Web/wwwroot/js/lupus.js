@@ -61,5 +61,33 @@ window.lupusStorage = {
     scrollLog: function () {
         const el = document.querySelector('.log-list');
         if (el) el.scrollTop = el.scrollHeight;
+    },
+
+    copy: async function (text) {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch (e) {
+            // Prova il fallback sotto.
+        }
+
+        try {
+            const area = document.createElement('textarea');
+            area.value = text;
+            area.style.position = 'fixed';
+            area.style.top = '0';
+            area.style.left = '0';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.focus();
+            area.select();
+            const ok = document.execCommand('copy');
+            area.remove();
+            return ok;
+        } catch (e) {
+            return false;
+        }
     }
 };

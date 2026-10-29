@@ -4,21 +4,34 @@ File di contesto per chi lavora su questo repository. Leggilo prima di modificar
 
 ## 1. Obiettivo del progetto
 
-Trasformare il vecchio narratore da terminale di **Lupus in Tabula** in un'applicazione web usabile da tablet o telefono, mantenendo il motore di gioco separato dalla UI.
+Portare il vecchio narratore da terminale di **Lupus in Tabula** a un gioco web
+**multiplayer in tempo reale**: il narratore conduce la partita da un dispositivo, ogni
+giocatore entra dal proprio telefono sulla stessa Wi-Fi e vede solo ciò che gli spetta.
 
 Stato attuale:
 
-- **Narratore-only**: una sola persona (il narratore) usa l'app e passa il dispositivo ai giocatori per rivelare i ruoli.
-- **Nessun account, nessun database**: la partita vive nel browser e può essere esportata/importata come JSON.
-- **Pronto per il multi-dispositivo**: il motore è una libreria pura, serializzabile, senza dipendenze da ASP.NET o dal browser. In futuro si potrà aggiungere un'API/SignalR per i telefoni dei giocatori senza riscrivere le regole.
+- **Multiplayer**: stanza con codice a 5 lettere, posti reclamabili, token per dispositivo.
+- **Narratore regista**: crea la stanza, avvia la partita, vede tutto, può sostituirsi a un
+  giocatore e decide quando rivelare i ruoli dei morti.
+- **Giocatori dal telefono**: ruolo privato, azioni notturne, quaderno delle indagini, voto
+  del rogo e ballottaggio con conteggio in tempo reale.
+- **Nessun account, nessun database**: le stanze vivono in memoria sul server; la partita è
+  esportabile/importabile come JSON.
+- **Motore separato**: `Lupus.Core` è una libreria pura, serializzabile, senza dipendenze da
+  ASP.NET o dal browser.
 
 ## 2. Stack e prerequisiti
 
 - .NET SDK **10.0.200** (target `net10.0`).
 - ASP.NET Core + **Blazor Server** (interactive server, prerender disabilitato).
 - CSS puro in `Lupus.Web/wwwroot/app.css`.
-- JavaScript minimo in `Lupus.Web/wwwroot/js/lupus.js` per `localStorage`, download JSON e beep.
+- JavaScript minimo in `Lupus.Web/wwwroot/js/lupus.js` per `localStorage`, download JSON,
+  copia negli appunti e beep.
 - Nessun package NuGet esterno oltre a quelli del framework.
+
+Il realtime usa i **circuiti Blazor Server** già esistenti: `StanzeService` è un singleton
+che tiene le stanze e i callback dei componenti; ogni transizione notifica tutti i circuiti
+iscritti alla stanza. Non c'è un secondo hub SignalR né un client JS separato.
 
 ## 3. Comandi
 
@@ -33,7 +46,8 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 
 # Avvio web (profilo HTTP, senza certificati)
 dotnet run --project Lupus.Web --launch-profile http
-# http://localhost:5092
+# narratore: http://localhost:5092
+# telefoni:  http://<IP-del-PC>:5092
 
 # Build del solo web
 dotnet build Lupus.Web/Lupus.Web.csproj
@@ -43,10 +57,17 @@ dotnet publish Lupus.Web/Lupus.Web.csproj -c Release
 # → Lupus.Web/bin/Release/net10.0/publish/Lupus.Web.exe
 ```
 
-> La porta 5092 è impostata in `appsettings.json` (`"Urls"`), quindi vale anche per
-> l'exe pubblicato. `launchSettings.json` viene usato solo da `dotnet run`/IDE: l'exe
-> dentro `bin\Debug\net10.0` non è distribuibile (manca `wwwroot`) e senza `Urls`
-> ripiegherebbe sulla porta 5000.
+> La porta 5092 e il binding `http://0.0.0.0:5092` sono in `appsettings.json` (`"Urls"`),
+> quindi valgono anche per l'exe pubblicato. `launchSettings.json` viene usato solo da
+> `dotnet run`/IDE: l'exe dentro `bin\Debug\net10.0` non è distribuibile (manca `wwwroot`)
+> e senza `Urls` ripiegherebbe sulla porta 5000.
+
+Se i telefoni non raggiungono il PC, apri la porta TCP 5092 nel firewall di Windows
+(profilo privato):
+
+```powershell
+New-NetFirewallRule -DisplayName "Lupus 5092" -Direction Inbound -Protocol TCP -LocalPort 5092 -Action Allow -Profile Private
+```
 
 Il vecchio progetto console `Lupus/` resta compilabile e **non va modificato** salvo richiesta esplicita: serve come riferimento storico delle regole.
 
@@ -57,7 +78,7 @@ Lupus.slnx
 ├── Lupus/                  # vecchia app console, invariata
 ├── Lupus.Core/             # motore di gioco puro, riutilizzabile
 ├── Lupus.Core.Tests/       # harness console con scenari di regole
-└── Lupus.Web/              # Blazor Server, UI italiana
+└── Lupus.Web/              # Blazor Server, UI italiana, stanze multiplayer
 ```
 
 ### Lupus.Core
@@ -77,21 +98,109 @@ Lupus.slnx
 
 | File | Responsabilità |
 | --- | --- |
-| `Program.cs` | Registra Razor Components, `PartitaService`, `ArchivioPartita`; static assets; interactive server. |
+| `Program.cs` | Registra Razor Components, `StanzeService` (singleton), `ReteHelper` (singleton), `ArchivioPartita`/`ArchivioSessioni` (scoped); static assets; interactive server. |
 | `Components/App.razor` | HTML base italiano, `prerender: false`, CSS, script `lupus.js`. |
-| `Components/Pages/Home.razor` | Setup partita: preset, conteggi ruoli, nomi, validazione, ripresa salvataggio. |
-| `Components/Pages/PartitaGioco.razor` | Dashboard di gioco (`/partita`): timeline fasi, passi notte, alba, discussione, voto, ballottaggio, rogo, vittoria, sidebar, log, timer, salvataggi, modale ruoli. |
-| `Components/Shared/PlayerPicker.razor` | Griglia riutilizzabile di selezione giocatore. |
+| `Components/Pages/Home.razor` | Crea una stanza (preset, ruoli, nomi), entra con codice, riprende le sessioni, importa un JSON. |
+| `Components/Pages/Entra.razor` | `/entra` e `/entra/{Codice}`: inserimento codice, elenco posti, reclamo del posto, rientro, "Dimentica". |
+| `Components/Pages/Gioca.razor` | `/gioca/{Codice}?t=...`: lobby, ruolo privato, azioni notturne, alba, discussione, voto, ballottaggio, esecuzione, finale, quaderno. |
+| `Components/Pages/PartitaGioco.razor` | `/partita/{Codice}?h=...`: dashboard narratore, lobby e link, passi notte, alba, voto live, ballottaggio, rogo, finale, diario, timer, rivelazioni, chiusura stanza. |
+| `Components/Shared/PlayerPicker.razor` | Griglia di selezione con ruoli/fazioni: **solo per il narratore**. |
+| `Components/Shared/PlayerTargetPicker.razor` | Griglia di selezione senza ruoli né colori di fazione: **per i giocatori**. |
+| `Components/Shared/VoteTally.razor` | Conteggio voti con barre, elettori e non votanti. |
 | `Components/Shared/TimerCountdown.razor` | Timer con preset, pausa/reset, beep a fine tempo, callback durata. |
-| `Services/PartitaService.cs` | Partita corrente per circuito Blazor (una scheda = una partita). |
-| `Services/ArchivioPartita.cs` | localStorage, export/import JSON, beep, conferma. |
+| `Services/Stanza.cs` | Stato stanza: posti/token, `Avviata`, voti, esiti, flag di rivelazione, quaderni privati. |
+| `Services/StanzeService.cs` | Registro singleton: creazione, join, transizioni, azioni, voti, pareggi, notifiche, pulizia 24h. |
+| `Services/StatoGiocatore.cs` | DTO e factory della vista giocatore: filtro privacy, azioni autorizzate, stato voto. |
+| `Services/ReteHelper.cs` | Rileva l'IPv4 LAN e costruisce gli URL `http://<ip>:5092/entra/<codice>`. |
+| `Services/ArchivioSessioni.cs` | Sessioni host/giocatore in `localStorage` (`lupus.sessioni.v1`). |
+| `Services/ArchivioPartita.cs` | Export/import JSON, download, conferma, copia negli appunti. |
 | `Services/Testi.cs` | Etichette italiane di fasi, vittorie e classi CSS. |
-| `wwwroot/app.css` | Tema scuro "notte", layout responsive, tutti i componenti. |
-| `wwwroot/js/lupus.js` | `lupusStorage.save/load/remove/download/beep/scrollLog`. |
+| `wwwroot/app.css` | Tema scuro "notte", layout responsive, componenti narratore e telefono. |
+| `wwwroot/js/lupus.js` | `lupusStorage.save/load/remove/download/copy/beep/scrollLog`. |
 
-> **Nota sul nome della pagina**: il componente si chiama `PartitaGioco`, non `Partita`, per evitare che la classe generata `Lupus.Web.Components.Pages.Partita` oscuri `Lupus.Core.Partita` nel codice generato. La route resta `/partita`.
+> **Nota sul nome della pagina**: il componente si chiama `PartitaGioco`, non `Partita`, per evitare che la classe generata `Lupus.Web.Components.Pages.Partita` oscuri `Lupus.Core.Partita` nel codice generato. La route resta `/partita/{Codice}`.
 
-## 5. Flusso di gioco e macchina a stati
+> `Services/PartitaService.cs` è il vecchio servizio a circuito singolo: non è più registrato
+> né usato. Può essere eliminato quando non serve più come riferimento.
+
+## 5. Modello multiplayer
+
+### Stanza e token
+
+- `Stanza.Codice`: 5 caratteri da un alfabeto senza ambiguità (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`).
+- `Stanza.HostToken`: segreto del narratore, passato in query `?h=...` e salvato in `localStorage`.
+- `Posto.Token`: segreto del singolo giocatore, passato in query `?t=...` e salvato in `localStorage`.
+- `Stanza.Avviata`: finché è `false` i telefoni sono in lobby e **non** vedono il ruolo.
+- `Stanza.Posti`: un posto per ogni giocatore creato, con `GiocatoreId` stabile.
+- I token sono opachi e non indovinabili (GUID `N`); non c'è autenticazione oltre al token.
+
+### Ciclo di vita
+
+1. `Home` → `StanzeService.Crea(...)` → `CreazionePartita.Crea(...)` (ruoli già assegnati) →
+   stanza in `NotteIntro` con `Avviata = false`.
+2. I giocatori aprono `/entra/<codice>`, scelgono un posto libero → `UnisciAsync` genera il
+   token del posto.
+3. Il narratore apre `/partita/<codice>?h=<hostToken>` e preme **Avvia la partita** →
+   `AvviaAsync` imposta `Avviata = true`; i telefoni mostrano il ruolo.
+4. `IniziaNotteAsync` chiama `MotoreLupus.IniziaNotte` e azzera voti e flag di rivelazione.
+5. I giocatori eseguono i passi dal telefono (`EseguiPassoGiocatoreAsync`); il narratore può
+   sempre eseguirli al posto loro (`EseguiPassoNarratoreAsync`).
+6. `RisolviNotteAsync` → alba; `VaiAlGiornoAsync` → giorno; `ApriVotoAsync` → voto.
+7. I telefoni votano (`RegistraVotoAsync`), il narratore chiude (`ChiudiVotoAsync`).
+8. Se il Gufo ha aggiunto candidati si passa al ballottaggio (`ChiudiBallottaggioAsync`).
+9. `ProssimaNotteAsync` torna a `NotteIntro` con il turno successivo.
+10. `AbbandonaAsync` rimuove la stanza e notifica i telefoni, che mostrano "stanza chiusa".
+
+### Privacy (regola d'oro)
+
+La vista giocatore è costruita **solo** da `StatoGiocatoreFactory.Crea`. Non passare mai
+direttamente `Partita` o `Giocatore` a `Gioca.razor`.
+
+- `StatoGiocatore.Ruolo`/`Info` sono `null` finché `Avviata == false`.
+- `GiocatorePubblico.Ruolo` è valorizzato solo per: il proprio ruolo, i morti se il narratore
+  ha attivato `RivelaRuoliMorti`, il condannato se ha attivato `RivelaRuoloRogo`, e tutti
+  alla fine.
+- `GiocatorePubblico.Capobranco` è visibile al branco e a se stessi; `Trasformato` resta
+  privato (o finale).
+- `AzioneGiocatore.Risultato` è popolato solo per i passi autorizzati al giocatore.
+- `EventiAlba` esclude gli eventi con `Riservato = true`.
+- Il diario (`Partita.Log`) è **solo del narratore** e non viene mai serializzato verso il
+  telefono.
+- `PlayerPicker` espone ruoli e accenti: usalo solo nel pannello narratore. Per i giocatori
+  usa `PlayerTargetPicker`.
+
+### Autorizzazione delle azioni
+
+`StatoGiocatoreFactory.Autorizzato(giocatore, passo)`:
+
+- `TipoPasso.Capobranco` → qualsiasi Lupo vivo.
+- `Potere.Lupo` → qualsiasi Lupo vivo.
+- altrimenti → solo `passo.AttoreId`.
+
+In più `StanzeService` verifica sempre: token valido, fase `Notte`, giocatore vivo, passo
+esistente, autorizzazione, e `Partita.PassoCorrente?.Id == passoId`.
+
+### Voto e pareggi
+
+- `Stanza._voti` è `votanteId → bersaglioId`; un giocatore vota una sola volta.
+- Il voto è segreto finché il narratore non chiude: `StatoVoto.Conteggi` è vuoto durante il
+  voto aperto, tranne per il narratore che vede il tally live.
+- `ChiudiVotoAsync` calcola i gruppi; se il massimo è condiviso imposta `VotoPareggio`,
+  `CandidatiPareggio` e restituisce `RisultatoChiusura.Pareggio = true`.
+- Il narratore risolve con `sceltaManuale`; solo dopo si chiama `MotoreLupus.Vota`.
+- Il ballottaggio segue lo stesso schema con `_votiBallottaggio`.
+- `ApplicaVoto`/`ApplicaBallottaggio` aggiornano gli esiti mostrati ai telefoni.
+
+### Notifiche
+
+- `StanzeService.Sottoscrivi(codice, callback)` e `AnnullaSottoscrizione`.
+- Ogni pagina che mostra una stanza si iscrive in `OnAfterRenderAsync` e si disiscrive in
+  `Dispose`.
+- Le notifiche partono **fuori dal lock** e ogni callback è protetta da try/catch: un
+  telefono disconnesso non deve bloccare gli altri.
+- Dopo ogni mutazione chiamare `NotificaAsync`.
+
+## 6. Flusso di gioco e macchina a stati
 
 `FasePartita`:
 
@@ -105,7 +214,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 - `EseguiPasso(partita, passoId, bersaglioId)` registra l'azione e calcola il risultato. Se `RichiedeConferma`, il passo resta non completato e la UI mostra il risultato con un pulsante di conferma; altrimenti si completa subito.
 - `ConfermaRisultato` completa un passo informativo che richiede conferma.
 - `RisolviNotte` applica morti, trappole, Kamikaze, Baby Lupo, Diavolo, Copioni e calcola il risultato dell'alba. Imposta `Fase = Alba` oppure `Finita` se c'è una vittoria.
-- `VaiAlGiorno` passa ad `Giorno` (o `Finita` se l'esito è già deciso).
+- `VaiAlGiorno` passa a `Giorno` (o `Finita` se l'esito è già deciso).
 - `ApriVoto` apre il voto. `Vota` può chiudere subito il rogo oppure aprire il ballottaggio se il Gufo ha aggiunto candidati.
 - `ScegliBallottaggio` esegue il rogo tra i candidati.
 - `ProssimaNotte` incrementa il turno e torna a `NotteIntro`.
@@ -124,7 +233,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 - `Partita.BallottaggioIds` contiene i candidati del Gufo durante l'alba/giorno/voto; durante il ballottaggio contiene i candidati finali (votato + gufati).
 - `Partita.Esito` non nullo significa partita decisa; la fase può essere `Alba` (vittoria notturna) o `Finita`.
 
-## 6. Regole e correzioni rispetto alla versione console
+## 7. Regole e correzioni rispetto alla versione console
 
 Le regole sono state portate dalla console, correggendo i bug evidenti. Le modifiche principali:
 
@@ -144,43 +253,70 @@ Le regole sono state portate dalla console, correggendo i bug evidenti. Le modif
 
 Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
-## 7. UI e stato della pagina
+## 8. UI e stato delle pagine
 
-`PartitaGioco.razor` gestisce:
+### `PartitaGioco.razor` (narratore)
 
+- **Header**: codice stanza, fase, conteggi, rivela/nascondi ruoli, esporta, chiudi.
 - **Timeline** delle fasi con stato `done/current/todo`.
-- **NotteIntro**: composizione, capobranco, pulsanti "Rivela i ruoli" e "Inizia la notte".
-- **Notte**: passo corrente, player picker filtrato su `OpzioniIds`, risultato con conferma se necessario, log delle azioni della notte, pulsante "Risolvi la notte" quando `NotteCompleta`.
-- **Alba**: eventi pubblici, caduti con ruolo, eventuale ballottaggio del Gufo, eventi riservati al narratore.
-- **Giorno**: vivi, eventuale candidato del Gufo, apertura voto.
-- **Voto**: player picker sui vivi, conferma voto.
-- **Ballottaggio**: candidati e scelta finale.
-- **Esecuzione**: ultimo rogo, ruolo, prossima notte.
-- **Finita**: pannello vincitore e riepilogo ruoli.
-- **Sidebar**: timer, elenco giocatori con reveal, diario filtrabile, salvataggio/export/import/abbandono.
-- **Modale ruoli**: reveal uno alla volta, con tracciamento dei ruoli già visti (`ruoliRivelati`, non persistito).
-- **Autosave** dopo ogni transizione e dopo il cambio durata timer.
+- **Lobby**: link per i telefoni, posti occupati, "Libera" per un posto, "Avvia la partita".
+- **Notte**: passo corrente, picker con ruoli, risultato con conferma, log dei passi,
+  "Risolvi la notte" quando `NotteCompleta`.
+- **Alba**: eventi pubblici, caduti, gufati, eventi riservati, interruttore "Rivela i ruoli dei caduti".
+- **Giorno**: vivi, candidati del Gufo, "Apri il voto".
+- **Voto**: tally live, "Chiudi il voto", pannello pareggio, "Forza il rogo".
+- **Ballottaggio**: candidati, tally live, pareggio, forza.
+- **Esecuzione**: ultimo rogo, interruttore "Rivela il ruolo del condannato", "Cala la notte".
+- **Finita**: vincitore e riepilogo ruoli.
+- **Sidebar**: timer, elenco giocatori con stato connessione (`📱`) e reveal, stanza/link,
+  diario filtrabile.
+- **Modale ruoli**: reveal uno alla volta (`ruoliRivelati`, non persistito).
+
+### `Gioca.razor` (giocatore)
+
+- **Header sticky**: stanza, nome, fase/turno, chip del proprio ruolo, stato vivo/morto.
+- **Lobby**: posti e attesa, senza ruolo.
+- **Ruolo**: carta con icona, fazione, descrizione, capobranco, compagni di branco.
+- **Notte**: una card per ogni azione autorizzata, picker senza ruoli, risultato, conferma.
+- **Alba**: eventi pubblici, caduti (ruolo solo se rivelato), gufati.
+- **Giorno**: vivi e candidati.
+- **Voto/Ballottaggio**: picker, voto segreto, avanzamento, esito e tally a chiusura.
+- **Esecuzione**: condannato e ruolo se rivelato.
+- **Finita**: vincitore, eventi, ruoli di tutti.
+- **Quaderno**: risultati privati raggruppati per turno.
 
 ### Dettagli tecnici importanti
 
-- `App.razor` usa `prerender: false`: JS/localStorage sono disponibili in `OnAfterRenderAsync`, non in `OnInitialized`.
-- La pagina carica la partita da `PartitaService.Corrente`; se manca, prova `Archivio.CaricaAsync()` al primo render.
-- `TimerCountdown` viene ricreato con `@key="TimerKey"` quando cambiano partita/turno/fase o dopo un import (`timerReset`).
-- `TimerCountdown.OnDurataCambiata` aggiorna `Partita.TimerSecondi` e salva.
-- Il timer **non** persiste i secondi rimanenti: dopo un reload riparte dalla durata configurata. È una scelta consapevole, non un bug.
+- `App.razor` usa `prerender: false`: JS/localStorage sono disponibili in `OnAfterRenderAsync`,
+  non in `OnInitialized`.
+- Le pagine risolvono il token da query string e, se manca, da `ArchivioSessioni`.
+- `Stanze.Ottieni` va richiamato a ogni aggiornamento: la stanza può essere stata chiusa o
+  sostituita.
+- `Stanze.StatoDi`/`PostiPubblici`/`GiocatoreDi` prendono il lock del servizio: non leggere
+  `Stanza.Partita` direttamente da un circuito mentre un altro scrive.
+- `TimerCountdown` viene ricreato con `@key="TimerKey"` quando cambiano stanza/turno/fase o
+  dopo un cambio manuale.
+- Il timer **non** persiste i secondi rimanenti: dopo un reload riparte dalla durata
+  configurata. È una scelta consapevole.
 - Il diario mostra le ultime 250 voci e fa auto-scroll tramite `lupusStorage.scrollLog`.
-- Il log contiene informazioni da narratore (ruoli, poteri). Non mostrarlo ai giocatori.
+- Su mobile il layout del giocatore è a colonna singola; il narratore resta a due colonne
+  sopra i 1240px.
 
-## 8. Persistenza
+## 9. Persistenza
 
-- Chiave localStorage: `lupus.partita.v1` (vedi `ArchivioPartita.Chiave`).
-- Formato: `SalvataggioPartita { Versione, SalvataIl, Partita }`, JSON con enum stringa.
-- Export: download di `lupus-yyyyMMdd-HHmm.json`.
-- Import: lettura file, `Serializzazione.Deserializza`, controllo giocatori, sostituzione partita corrente e salvataggio.
+- Sessioni: chiave `lupus.sessioni.v1` (`ArchivioSessioni`), elenco di
+  `SessioneBrowser { Codice, Tipo, Token, GiocatoreId, Nome, SalvataIl }`.
+- Un browser può ospitare e giocare la stessa stanza (tipi diversi), ma ricorda **un solo
+  giocatore per stanza**: l'ultimo posto reclamato sovrascrive il precedente.
+- Export: `ArchivioPartita.ScaricaAsync` → `lupus-yyyyMMdd-HHmm.json`.
+- Import: `Serializzazione.Deserializza` → `Stanze.CreaDaPartita(partita, avviata)`; se la
+  partita non è in `NotteIntro` la stanza nasce già avviata e i posti sono liberi.
 - `Partita.Normalizza()` ripara liste null dopo un import.
 - `Partita.Versione` è pensato per migrazioni future.
+- **Le stanze non sono persistite**: un riavvio del server le perde. `Pulizia()` rimuove le
+  stanze inattive da più di 24 ore.
 
-## 9. Test
+## 10. Test
 
 `Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 14 scenari:
 
@@ -201,45 +337,49 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 
-## 10. Convenzioni
+La UI multiplayer non ha test automatici: la verifica è manuale con narratore + più schede
+giocatore (vedi checklist).
+
+## 11. Convenzioni
 
 - UI in **italiano**, tono da narratore di paese.
 - Tema scuro "notte", accento viola/blu, responsive per tablet e telefono.
 - Nessuna dipendenza da Bootstrap o framework CSS.
 - Preferire classi CSS semantiche già presenti in `app.css`; aggiungerne di nuove solo se necessario.
 - Il motore non deve conoscere Blazor, JS, localStorage o HTTP.
-- Le transizioni di stato passano sempre da `MotoreLupus`; la UI non modifica mai direttamente `Vivi`, `Ruolo`, `Fase`, ecc. (unica eccezione: flag di presentazione e `TimerSecondi`).
+- Le transizioni di stato passano sempre da `MotoreLupus`; la UI non modifica mai direttamente
+  `Vivi`, `Ruolo`, `Fase`, ecc. (unica eccezione: flag di presentazione e `TimerSecondi`).
+- Ogni nuova informazione mostrata a un giocatore passa da `StatoGiocatoreFactory`, mai da
+  `Partita` o `Giocatore` grezzi.
 - Non eliminare il progetto console `Lupus/`: è il riferimento storico.
 
-## 11. Limiti attuali
+## 12. Limiti attuali
 
-- Solo narratore: i giocatori non hanno un'interfaccia propria.
-- Nessuna autenticazione: chiunque abbia accesso al browser vede tutti i ruoli.
-- Salvataggio locale per browser/dispositivo; per cambiare dispositivo serve export/import.
+- Le stanze vivono in memoria: un riavvio del server le cancella.
+- Nessuna autenticazione oltre al token: chi ha il link può reclamare un posto libero.
+- Un browser ricorda un solo giocatore per stanza.
 - Il timer non conserva i secondi rimanenti tra reload.
 - Lo stato "ruolo già rivelato" nella modale non è persistito.
-- Nessun test UI automatizzato; la verifica è manuale nel browser.
-- La partita console e quella web sono separate: non condividono lo stato.
+- Nessun test UI automatizzato.
+- Il rilevamento dell'IP LAN preferisce Wi-Fi/Ethernet reali e penalizza gli adattatori
+  virtuali, ma su macchine con VPN o più reti potrebbe comunque scegliere l'indirizzo
+  sbagliato: in quel caso mostra il link corretto a mano.
 
-## 12. Roadmap multi-dispositivo
+## 13. Roadmap
 
-Obiettivo: permettere ai giocatori di usare il telefono, mantenendo il narratore come regista.
+1. **Persistenza server** delle stanze (in-memory con scadenza già presente, poi database)
+   usando lo stesso JSON di `Serializzazione`.
+2. **Reconnect robusto**: heartbeat dei telefoni, stato "connesso" reale, ripresa dopo
+   sospensione del browser.
+3. **QR code** nella lobby per far entrare i telefoni senza digitare il link.
+4. **Test di integrazione** per autorizzazione, privacy e viste filtrate.
+5. **Notifiche** (vibrazione/beep) quando il telefono deve agire o quando si apre il voto.
+6. **Eliminare** `PartitaService` e i riferimenti al vecchio flusso narratore-only.
 
-1. **Estrarre un servizio applicativo** attorno a `MotoreLupus` (comandi: `EseguiPasso`, `Vota`, ecc.) con DTO e validazione.
-2. **Aggiungere `Lupus.Api`** (minimal API o SignalR) con:
-   - creazione partita e codice stanza;
-   - join con nome e token giocatore;
-   - endpoint che restituiscono solo le informazioni consentite (ruolo proprio, azioni disponibili, stato pubblico);
-   - broadcast degli eventi pubblici e dei risultati.
-3. **Sostituire `PartitaService`** con un client che parla con l'API; mantenere `ArchivioPartita` per la modalità offline del narratore.
-4. **Persistenza server** (in-memory con scadenza, poi database) usando lo stesso JSON di `Serializzazione`.
-5. **Privacy**: il narratore vede tutto; il giocatore vede solo il proprio ruolo e le azioni che può compiere. Filtrare log ed eventi riservati.
-6. **Reconnect**: token di sessione, riconnessione SignalR, stato idempotente.
-7. **Test**: aggiungere test di integrazione per autorizzazione e per le viste filtrate.
+Il motore è già serializzabile e senza stato globale: queste aggiunte non richiedono di
+riscrivere le regole.
 
-Il motore è già serializzabile e senza stato globale, quindi il passaggio a un'API non richiede di riscrivere le regole.
-
-## 13. Checklist rapida prima di consegnare
+## 14. Checklist rapida prima di consegnare
 
 ```powershell
 dotnet build Lupus.slnx
@@ -247,12 +387,18 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 dotnet run --project Lupus.Web --launch-profile http
 ```
 
-Poi nel browser:
+Poi nel browser (narratore + almeno due schede giocatore):
 
-- Setup → preset → nomi → "Inizia la partita".
-- "Rivela ruoli" → reveal di un giocatore → chiusura modale.
-- "Inizia la notte" → completa i passi → conferma risultati → "Risolvi la notte".
-- Alba → "Vai alla discussione" → "Apri il voto" → voto → eventuale ballottaggio.
-- Rogo → "Cala la notte".
-- Salva, esporta, ricarica la pagina, riprendi il salvataggio.
-- Controlla console browser senza errori.
+- Home → preset → nomi → "Crea la stanza" → codice e link visibili.
+- Apri il link in due schede → reclama due posti → i telefoni sono in lobby senza ruolo.
+- "Avvia la partita" → ogni telefono vede il proprio ruolo.
+- "Inizia la notte" → il giocatore di turno agisce → il passo avanza per tutti.
+- Conferma un risultato informativo (Veggente) → il quaderno si popola.
+- "Risolvi la notte" → alba → "Vai alla discussione" → "Apri il voto".
+- Vota da due telefoni → il narratore vede il tally → "Chiudi il voto".
+- Pareggio → scegli il candidato → rogo; oppure ballottaggio del Gufo.
+- "Cala la notte" → secondo turno.
+- "Rivela i ruoli dei caduti" e "Rivela il ruolo del condannato" cambiano la vista dei telefoni.
+- Fine partita → tutti i ruoli visibili su tutti i dispositivi.
+- Esporta, ricarica, riprendi dalla home; chiudi la stanza e verifica il messaggio sui telefoni.
+- Controlla la console del browser senza errori e il layout a 390px di larghezza.

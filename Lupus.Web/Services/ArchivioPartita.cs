@@ -50,4 +50,16 @@ public sealed class ArchivioPartita
     {
         return await _js.InvokeAsync<bool>("confirm", messaggio);
     }
+
+    public async Task<bool> CopiaAsync(string testo)
+    {
+        try
+        {
+            return await _js.InvokeAsync<bool>("lupusStorage.copy", testo);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

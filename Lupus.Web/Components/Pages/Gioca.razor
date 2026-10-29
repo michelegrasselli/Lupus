@@ -1,0 +1,935 @@
+@page "/gioca/{Codice}"
+@implements IDisposable
+@inject StanzeService Stanze
+@inject ArchivioSessioni Sessioni
+@inject ArchivioPartita Archivio
+@inject NavigationManager Nav
+
+<PageTitle>Lupus · @TitoloPagina</PageTitle>
+
+@if (caricamento)
+{
+    <div class="loading-page player-loading">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Entro nel villaggio...</p>
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(erroreSessione))
+{
+    <div class="player-page">
+        <div class="empty-page">
+            <div class="empty-icon">🔑</div>
+            <h1>Sessione non valida</h1>
+            <p class="muted">@erroreSessione</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/entra/@Codice">Torna ai posti</a>
+                <a class="btn btn-ghost" href="/">Home</a>
+            </div>
+        </div>
+    </div>
+}
+else if (stato == null)
+{
+    <div class="player-page">
+        <div class="empty-page">
+            <div class="empty-icon">🌫️</div>
+            <h1>Stanza non disponibile</h1>
+            <p class="muted">Il narratore potrebbe aver chiuso la stanza.</p>
+            <a class="btn btn-primary" href="/">Torna alla home</a>
+        </div>
+    </div>
+}
+else
+{
+    <div class="player-page">
+        <header class="player-header">
+            <div class="player-brand">
+                <span class="brand-mark" aria-hidden="true">🐺</span>
+                <div>
+                    <p class="eyebrow">Stanza @stato.Codice</p>
+                    <h1>@stato.Nome</h1>
+                    <p class="muted small">@Testi.FaseBreve(stato.Fase) · Turno @stato.Turno</p>
+                </div>
+            </div>
+
+            <div class="player-header-actions">
+                @if (stato.Avviata && stato.Info is { } infoHeader)
+                {
+                    <span class="role-chip player-role-chip" style="--accent: @infoHeader.Accento">
+                        @infoHeader.Icona @infoHeader.Nome
+                    </span>
+                }
+                <span class="pill @(stato.Vivo ? "good" : "evil")">@(stato.Vivo ? "In vita" : "Fuori gioco")</span>
+                <button type="button" class="icon-btn" @onclick="Esci" aria-label="Esci dalla stanza" title="Esci">✕</button>
+            </div>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(errore))
+        {
+            <div class="alert alert-error">
+                <span>@errore</span>
+                <button type="button" class="alert-close" @onclick="() => errore = null" aria-label="Chiudi">✕</button>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(avviso))
+        {
+            <div class="alert alert-info">
+                <span>@avviso</span>
+                <button type="button" class="alert-close" @onclick="() => avviso = null" aria-label="Chiudi">✕</button>
+            </div>
+        }
+
+        @if (!stato.Avviata)
+        {
+            <div class="card player-lobby-card">
+                <div class="stage-head">
+                    <div class="stage-icon">⏳</div>
+                    <div>
+                        <p class="eyebrow">Lobby</p>
+                        <h2>In attesa del narratore</h2>
+                        <p class="muted">
+                            Hai reclamato il posto di <strong>@stato.Nome</strong>.
+                            Il tuo ruolo apparirà qui appena la partita viene avviata.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="lobby-status-row">
+                    <span class="pill">@stato.Giocatori.Count giocatori</span>
+                    <span class="pill">@Testi.FaseBreve(stato.Fase)</span>
+                </div>
+
+                <div class="alive-strip lobby-strip">
+                    @foreach (var g in stato.Giocatori)
+                    {
+                        <span class="alive-chip">
+                            <span class="avatar">@g.Iniziali</span>
+                            @g.Nome
+                        </span>
+                    }
+                </div>
+
+                <p class="micro">
+                    Tieni questa pagina aperta. Non serve ricaricare: quando il narratore
+                    avvia la stanza, il ruolo compare automaticamente.
+                </p>
+            </div>
+        }
+        else
+        {
+            @if (stato.Info is { } info)
+            {
+                <section class="player-role-card" style="--accent: @info.Accento">
+                    <div class="role-hero">
+                        <span class="role-hero-icon">@info.Icona</span>
+                        <div>
+                            <p class="eyebrow">Il tuo ruolo</p>
+                            <h2>@info.Nome</h2>
+                            <span class="alignment @(info.Buono ? "good" : "evil")">@Ruoli.Fazione(info.Ruolo)</span>
+                        </div>
+                    </div>
+
+                    <p class="role-description">@info.Descrizione</p>
+
+                    @if (stato.Capobranco || (stato.Trasformato && stato.RuoloIniziale is not null))
+                    {
+                        <div class="role-badges">
+                            @if (stato.Capobranco)
+                            {
+                                <span class="badge">👑 Capobranco</span>
+                            }
+                            @if (stato.Trasformato && stato.RuoloIniziale is { } iniziale)
+                            {
+                                <span class="badge">🎭 Era @Ruoli.Nome(iniziale)</span>
+                            }
+                        </div>
+                    }
+
+                    @if (stato.CompagniBranco.Count > 0)
+                    {
+                        <div class="pack-box">
+                            <strong>Il tuo branco</strong>
+                            <p>@string.Join(", ", stato.CompagniBranco)</p>
+                        </div>
+                    }
+                </section>
+            }
+
+            @if (!stato.Vivo)
+            {
+                <div class="spectator-banner">
+                    <strong>Sei fuori gioco.</strong>
+                    Puoi seguire la partita, ma non puoi più agire né votare.
+                </div>
+            }
+
+            @if (stato.Finita)
+            {
+                <section class="winner-panel @Testi.ClasseVittoria(stato.Esito)">
+                    <div class="winner-icon">@Testi.IconaVittoria(stato.Esito)</div>
+                    <p class="eyebrow">Partita conclusa</p>
+                    <h2>@Testi.TitoloVittoria(stato.Esito)</h2>
+                    <p>@Testi.SottotitoloVittoria(stato.Esito)</p>
+                    <div class="winner-stats">
+                        <div><strong>@stato.Turno</strong><span>turni</span></div>
+                        <div><strong>@stato.Giocatori.Count</strong><span>giocatori</span></div>
+                        <div><strong>@stato.Giocatori.Count(g => g.Vivo)</strong><span>superstiti</span></div>
+                    </div>
+                </section>
+
+                @if (stato.EventiAlba.Count > 0)
+                {
+                    <div class="dawn-events">
+                        @foreach (var evento in stato.EventiAlba)
+                        {
+                            <div class="event-row">@evento</div>
+                        }
+                    </div>
+                }
+
+                <div class="card">
+                    <div class="card-head compact">
+                        <h2>I ruoli del villaggio</h2>
+                        <span class="muted">@stato.Giocatori.Count(g => g.Vivo) vivi / @stato.Giocatori.Count</span>
+                    </div>
+                    <div class="final-grid">
+                        @foreach (var g in stato.Giocatori.OrderByDescending(x => x.Vivo).ThenBy(x => x.Nome))
+                        {
+                            <div class="final-player @(g.Vivo ? "" : "dead")" style="--accent: @g.Accento">
+                                <span class="avatar">@g.Iniziali</span>
+                                <div class="final-player-body">
+                                    <span class="final-player-name">@g.Nome @(g.Vivo ? "" : "✝")</span>
+                                    @if (g.Ruolo != null)
+                                    {
+                                        <span class="role-chip" style="--accent: @g.Accento">@g.Icona @g.NomeRuolo</span>
+                                    }
+                                </div>
+                                @if (g.Capobranco)
+                                {
+                                    <span title="Capobranco">👑</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-primary btn-block" @onclick="Esci">Torna alla home</button>
+            }
+            else if (stato.Fase == FasePartita.Notte)
+            {
+                @if (stato.Azioni.Count == 0)
+                {
+                    <div class="card player-wait-card">
+                        <div class="stage-head">
+                            <div class="stage-icon">🌙</div>
+                            <div>
+                                <p class="eyebrow">Notte @stato.Turno</p>
+                                <h2>Nessuna azione per te</h2>
+                                <p class="muted">Stanotte il tuo ruolo riposa. Aspetta l'alba.</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var azione in stato.Azioni)
+                    {
+                        <div class="card action-card @(azione.PuoAgire ? "current" : "") @(azione.Completato ? "done" : "")">
+                            <div class="stage-head">
+                                <div class="stage-icon">@azione.Icona</div>
+                                <div>
+                                    <p class="eyebrow">
+                                        @(azione.Completato ? "Registrata" : azione.PuoAgire ? "Tocca a te" : "In attesa")
+                                    </p>
+                                    <h2>@azione.Titolo</h2>
+                                    <p class="muted">@azione.Istruzione</p>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(azione.Risultato))
+                            {
+                                <div class="action-result">
+                                    <strong>Risultato</strong>
+                                    <p>@azione.Risultato</p>
+                                </div>
+                            }
+
+                            @if (azione.RichiedeConferma && !azione.Completato && !string.IsNullOrWhiteSpace(azione.Risultato))
+                            {
+                                <button type="button" class="btn btn-primary btn-block"
+                                        @onclick="() => ConfermaAzione(azione)"
+                                        disabled="@operazioneInCorso">
+                                    Ho capito, prosegui
+                                </button>
+                            }
+                            else if (azione.PuoAgire)
+                            {
+                                <PlayerTargetPicker Giocatori="azione.Opzioni"
+                                                    SelezionatoId="@Selezionato(azione.PassoId)"
+                                                    OnSeleziona="@(id => SelezionaAzione(azione.PassoId, id))" />
+
+                                <button type="button" class="btn btn-primary btn-block"
+                                        @onclick="() => EseguiAzione(azione)"
+                                        disabled="@(Selezionato(azione.PassoId) == null || operazioneInCorso)">
+                                    Conferma la scelta
+                                </button>
+
+                                @if (Selezionato(azione.PassoId) is { } scelto)
+                                {
+                                    <p class="muted small action-target">Bersaglio: <strong>@NomeDi(scelto)</strong></p>
+                                }
+                            }
+                            else if (!azione.Completato)
+                            {
+                                <p class="muted small">Il narratore sta chiamando gli altri ruoli. Attendi il tuo turno.</p>
+                            }
+                        </div>
+                    }
+                }
+            }
+            else if (stato.Fase == FasePartita.Alba)
+            {
+                <div class="card dawn-card">
+                    <div class="stage-head">
+                        <div class="stage-icon">🌅</div>
+                        <div>
+                            <p class="eyebrow">Turno @stato.Turno</p>
+                            <h2>Alba</h2>
+                            <p class="muted">Il villaggio si sveglia e conta i suoi morti.</p>
+                        </div>
+                    </div>
+
+                    @if (stato.EventiAlba.Count == 0)
+                    {
+                        <p class="muted">Nessun evento pubblico stanotte.</p>
+                    }
+                    else
+                    {
+                        <div class="dawn-events">
+                            @foreach (var evento in stato.EventiAlba)
+                            {
+                                <div class="event-row">@evento</div>
+                            }
+                        </div>
+                    }
+
+                    @if (stato.MortiNotte.Count > 0)
+                    {
+                        <h3 class="section-title">I caduti della notte</h3>
+                        <div class="dawn-deaths">
+                            @foreach (var morto in stato.MortiNotte)
+                            {
+                                <div class="death-card" style="--accent: @morto.Accento">
+                                    <span class="avatar">@morto.Iniziali</span>
+                                    <div>
+                                        <strong>@morto.Nome</strong>
+                                        @if (morto.Ruolo != null)
+                                        {
+                                            <span class="role-chip" style="--accent: @morto.Accento">
+                                                @morto.Icona @morto.NomeRuolo
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="role-chip muted">ruolo segreto</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        @if (stato.MortiNotte.Any(m => m.Id == stato.GiocatoreId))
+                        {
+                            <div class="spectator-banner">
+                                <strong>Sei caduto stanotte.</strong>
+                                Il villaggio ricorderà il tuo nome. Ora puoi solo osservare.
+                            </div>
+                        }
+                    }
+
+                    @if (stato.CandidatiGufo.Count > 0)
+                    {
+                        <div class="info-banner">
+                            🦉 Il Gufo ha mandato al ballottaggio: <strong>@Nomi(stato.CandidatiGufo)</strong>.
+                        </div>
+                    }
+
+                    <p class="muted small">Il narratore sta per aprire la discussione.</p>
+                </div>
+            }
+            else if (stato.Fase == FasePartita.Giorno)
+            {
+                <div class="card">
+                    <div class="stage-head">
+                        <div class="stage-icon">☀️</div>
+                        <div>
+                            <p class="eyebrow">Turno @stato.Turno</p>
+                            <h2>Il villaggio discute</h2>
+                            <p class="muted">Ascolta, accusa, difenditi. Il voto si apre dal narratore.</p>
+                        </div>
+                    </div>
+
+                    <div class="alive-strip">
+                        @foreach (var g in stato.Vivi)
+                        {
+                            <span class="alive-chip">
+                                <span class="avatar">@g.Iniziali</span>
+                                @g.Nome
+                            </span>
+                        }
+                    </div>
+
+                    @if (stato.CandidatiGufo.Count > 0)
+                    {
+                        <div class="info-banner">
+                            🦉 Al ballottaggio oggi: <strong>@Nomi(stato.CandidatiGufo)</strong>.
+                        </div>
+                    }
+                </div>
+            }
+            else if (stato.Fase == FasePartita.Voto && stato.Voto is { } voto)
+            {
+                <div class="card player-vote-card">
+                    <div class="stage-head">
+                        <div class="stage-icon">🗳️</div>
+                        <div>
+                            <p class="eyebrow">Turno @stato.Turno</p>
+                            <h2>Chi va al rogo?</h2>
+                            <p class="muted">
+                                @if (voto.PuoVotare)
+                                {
+                                    <text>Scegli il tuo voto. Non puoi votare per te stesso.</text>
+                                }
+                                else if (voto.HaVotato)
+                                {
+                                    <text>Hai già votato. Attendi la chiusura.</text>
+                                }
+                                else
+                                {
+                                    <text>Il voto è chiuso.</text>
+                                }
+                            </p>
+                        </div>
+                    </div>
+
+                    @if (voto.PuoVotare)
+                    {
+                        <PlayerTargetPicker Giocatori="voto.Candidati"
+                                            SelezionatoId="@votoScelto"
+                                            OnSeleziona="SelezionaVoto" />
+
+                        <button type="button" class="btn btn-primary btn-block"
+                                @onclick="Vota"
+                                disabled="@(votoScelto == null || operazioneInCorso)">
+                            Conferma il voto
+                        </button>
+                    }
+                    else if (voto.HaVotato)
+                    {
+                        <div class="action-result">
+                            <strong>Il tuo voto</strong>
+                            <p>@voto.MioVotoNome</p>
+                        </div>
+                    }
+
+                    @if (voto.Chiuso)
+                    {
+                        @if (!string.IsNullOrWhiteSpace(voto.Esito))
+                        {
+                            <div class="vote-result">
+                                <strong>Esito</strong>
+                                <p>@voto.Esito</p>
+                            </div>
+                        }
+
+                        @if (voto.Pareggio)
+                        {
+                            <div class="info-banner">
+                                Pareggio: il narratore sta scegliendo tra
+                                <strong>@Nomi(voto.CandidatiPareggio)</strong>.
+                            </div>
+                        }
+
+                        <VoteTally Conteggi="voto.Conteggi"
+                                   NonVotanti="voto.NonVotanti"
+                                   Votanti="@voto.Votanti"
+                                   Vivi="@voto.Vivi" />
+                    }
+                    else
+                    {
+                        <div class="vote-progress">
+                            <span>@voto.Votanti / @voto.Vivi hanno votato</span>
+                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@voto.Vivi" aria-valuenow="@voto.Votanti">
+                                <div style="width: @Percentuale(voto.Votanti, voto.Vivi)%"></div>
+                            </div>
+                        </div>
+                        <p class="muted small">I voti restano segreti finché il narratore non chiude.</p>
+                    }
+                </div>
+            }
+            else if (stato.Fase == FasePartita.Ballottaggio && stato.Ballottaggio is { } ballottaggio)
+            {
+                var candidati = ballottaggio.Candidati.Where(c => c.Id != stato.GiocatoreId).ToList();
+
+                <div class="card player-vote-card">
+                    <div class="stage-head">
+                        <div class="stage-icon">⚖️</div>
+                        <div>
+                            <p class="eyebrow">Turno @stato.Turno</p>
+                            <h2>Ballottaggio</h2>
+                            <p class="muted">
+                                @if (ballottaggio.PuoVotare)
+                                {
+                                    <text>Scegli tra i candidati. Non puoi votare per te stesso.</text>
+                                }
+                                else if (ballottaggio.HaVotato)
+                                {
+                                    <text>Hai già votato. Attendi la chiusura.</text>
+                                }
+                                else
+                                {
+                                    <text>Il ballottaggio è chiuso.</text>
+                                }
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="ballot-candidates">
+                        @foreach (var candidato in ballottaggio.Candidati)
+                        {
+                            <span class="candidate-chip">@candidato.Nome</span>
+                        }
+                    </div>
+
+                    @if (ballottaggio.PuoVotare)
+                    {
+                        @if (candidati.Count == 0)
+                        {
+                            <p class="muted">Sei l'unico candidato: il narratore deciderà.</p>
+                        }
+                        else
+                        {
+                            <PlayerTargetPicker Giocatori="candidati"
+                                                SelezionatoId="@ballottaggioScelto"
+                                                OnSeleziona="SelezionaBallottaggio" />
+
+                            <button type="button" class="btn btn-primary btn-block"
+                                    @onclick="VotaBallottaggio"
+                                    disabled="@(ballottaggioScelto == null || operazioneInCorso)">
+                                Conferma il voto
+                            </button>
+                        }
+                    }
+                    else if (ballottaggio.HaVotato)
+                    {
+                        <div class="action-result">
+                            <strong>Il tuo voto</strong>
+                            <p>@ballottaggio.MioVotoNome</p>
+                        </div>
+                    }
+
+                    @if (ballottaggio.Chiuso)
+                    {
+                        @if (!string.IsNullOrWhiteSpace(ballottaggio.Esito))
+                        {
+                            <div class="vote-result">
+                                <strong>Esito</strong>
+                                <p>@ballottaggio.Esito</p>
+                            </div>
+                        }
+
+                        @if (ballottaggio.Pareggio)
+                        {
+                            <div class="info-banner">
+                                Pareggio: il narratore sta scegliendo tra
+                                <strong>@Nomi(ballottaggio.CandidatiPareggio)</strong>.
+                            </div>
+                        }
+
+                        <VoteTally Conteggi="ballottaggio.Conteggi"
+                                   NonVotanti="ballottaggio.NonVotanti"
+                                   Votanti="@ballottaggio.Votanti"
+                                   Vivi="@ballottaggio.Vivi" />
+                    }
+                    else
+                    {
+                        <div class="vote-progress">
+                            <span>@ballottaggio.Votanti / @ballottaggio.Vivi hanno votato</span>
+                            <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@ballottaggio.Vivi" aria-valuenow="@ballottaggio.Votanti">
+                                <div style="width: @Percentuale(ballottaggio.Votanti, ballottaggio.Vivi)%"></div>
+                            </div>
+                        </div>
+                        <p class="muted small">I voti restano segreti finché il narratore non chiude.</p>
+                    }
+                </div>
+            }
+            else if (stato.Fase == FasePartita.Esecuzione)
+            {
+                <div class="card">
+                    <div class="stage-head">
+                        <div class="stage-icon">🔥</div>
+                        <div>
+                            <p class="eyebrow">Turno @stato.Turno</p>
+                            <h2>Il rogo è concluso</h2>
+                            <p class="muted">Il villaggio ha scelto. Il narratore annuncia il ruolo.</p>
+                        </div>
+                    </div>
+
+                    @if (stato.UltimoRogo is { } rogo)
+                    {
+                        <div class="execution-card" style="--accent: @rogo.Accento">
+                            <span class="avatar">@rogo.Iniziali</span>
+                            <div>
+                                <p class="eyebrow">Condannato</p>
+                                <h3>@rogo.Nome</h3>
+                                @if (rogo.Ruolo != null)
+                                {
+                                    <span class="role-chip" style="--accent: @rogo.Accento">
+                                        @rogo.Icona @rogo.NomeRuolo
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="role-chip muted">ruolo segreto</span>
+                                }
+                            </div>
+                        </div>
+
+                        @if (rogo.Id == stato.GiocatoreId)
+                        {
+                            <div class="spectator-banner">
+                                <strong>Sei stato mandato al rogo.</strong>
+                                Il tuo ruolo ora è pubblico. Il villaggio prosegue senza di te.
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="muted">Nessun condannato registrato per questo turno.</p>
+                    }
+
+                    <p class="muted small">Il narratore sta per calare la notte.</p>
+                </div>
+            }
+
+            @if (stato.Risultati.Count > 0)
+            {
+                <div class="card player-notebook">
+                    <div class="card-head compact">
+                        <div>
+                            <h2>Il tuo quaderno</h2>
+                            <p class="muted small">Le informazioni che hai scoperto restano qui.</p>
+                        </div>
+                        <span class="pill">@stato.Risultati.Count</span>
+                    </div>
+
+                    @foreach (var gruppo in stato.Risultati.GroupBy(r => r.Turno).OrderByDescending(g => g.Key))
+                    {
+                        <div class="notebook-turn">
+                            <span class="notebook-turn-label">Turno @gruppo.Key</span>
+                            @foreach (var risultato in gruppo)
+                            {
+                                <div class="notebook-entry">
+                                    <strong>@risultato.Titolo</strong>
+                                    <p>@risultato.Testo</p>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Codice { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "t")] public string? TokenQuery { get; set; }
+
+    private Stanza? stanza;
+    private Giocatore? giocatore;
+    private StatoGiocatore? stato;
+    private string? token;
+    private bool caricamento = true;
+    private bool sottoscritto;
+    private string? erroreSessione;
+    private string? errore;
+    private string? avviso;
+    private bool operazioneInCorso;
+    private string? votoScelto;
+    private string? ballottaggioScelto;
+    private FasePartita? fasePrecedente;
+    private readonly Dictionary<string, string?> selezioni = new();
+
+    private string TitoloPagina => stato == null
+        ? "Partita"
+        : stato.InLobby ? "Lobby" : $"Turno {stato.Turno}";
+
+    protected override void OnInitialized()
+    {
+        stanza = Stanze.Ottieni(Codice);
+        if (stanza == null)
+        {
+            erroreSessione = "La stanza non esiste più. Chiedi al narratore un nuovo codice.";
+            caricamento = false;
+            return;
+        }
+
+        token = TokenQuery;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        if (stanza == null)
+        {
+            caricamento = false;
+            StateHasChanged();
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            var sessione = await Sessioni.TrovaAsync(Codice, TipoSessione.Giocatore);
+            token = sessione?.Token;
+        }
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            erroreSessione = "Nessuna sessione trovata su questo dispositivo. Torna alla pagina dei posti e scegli il tuo nome.";
+            caricamento = false;
+            StateHasChanged();
+            return;
+        }
+
+        giocatore = Stanze.GiocatoreDi(stanza, token);
+        if (giocatore == null)
+        {
+            erroreSessione = "Il tuo posto è stato liberato dal narratore, oppure la stanza è stata ricreata. Scegli di nuovo il tuo nome.";
+            caricamento = false;
+            StateHasChanged();
+            return;
+        }
+
+        await Sessioni.SalvaAsync(new SessioneBrowser
+        {
+            Codice = Codice,
+            Tipo = TipoSessione.Giocatore,
+            Token = token,
+            GiocatoreId = giocatore.Id,
+            Nome = giocatore.Nome
+        });
+
+        Stanze.Sottoscrivi(Codice, OnStanzaAggiornata);
+        sottoscritto = true;
+
+        AggiornaStato();
+        caricamento = false;
+        StateHasChanged();
+    }
+
+    private void AggiornaStato()
+    {
+        if (stanza == null || string.IsNullOrWhiteSpace(token)) return;
+
+        var corrente = Stanze.Ottieni(stanza.Codice);
+        if (corrente == null)
+        {
+            stato = null;
+            erroreSessione = "La stanza è stata chiusa dal narratore.";
+            return;
+        }
+
+        stanza = corrente;
+        giocatore = Stanze.GiocatoreDi(stanza, token);
+
+        if (giocatore == null)
+        {
+            stato = null;
+            erroreSessione = "Il tuo posto è stato liberato dal narratore. Scegli di nuovo il tuo nome.";
+            return;
+        }
+
+        stato = Stanze.StatoDi(stanza, giocatore);
+
+        if (fasePrecedente != stato.Fase)
+        {
+            fasePrecedente = stato.Fase;
+            votoScelto = null;
+            ballottaggioScelto = null;
+            selezioni.Clear();
+        }
+    }
+
+    private async Task OnStanzaAggiornata()
+    {
+        await InvokeAsync(() =>
+        {
+            AggiornaStato();
+            StateHasChanged();
+        });
+    }
+
+    private string? Selezionato(string passoId) =>
+        selezioni.TryGetValue(passoId, out var id) ? id : null;
+
+    private void SelezionaAzione(string passoId, string giocatoreId)
+    {
+        selezioni[passoId] = giocatoreId;
+        errore = null;
+    }
+
+    private void SelezionaVoto(string giocatoreId)
+    {
+        votoScelto = giocatoreId;
+        errore = null;
+    }
+
+    private void SelezionaBallottaggio(string giocatoreId)
+    {
+        ballottaggioScelto = giocatoreId;
+        errore = null;
+    }
+
+    private async Task EseguiAzione(AzioneGiocatore azione)
+    {
+        if (stanza == null || token == null) return;
+
+        var bersaglio = Selezionato(azione.PassoId);
+        if (string.IsNullOrWhiteSpace(bersaglio))
+        {
+            errore = "Scegli un bersaglio prima di confermare.";
+            return;
+        }
+
+        operazioneInCorso = true;
+        errore = null;
+
+        try
+        {
+            var esito = await Stanze.EseguiPassoGiocatoreAsync(stanza, token, azione.PassoId, bersaglio);
+            if (!esito.Ok)
+            {
+                errore = esito.Errore;
+            }
+            else
+            {
+                selezioni.Remove(azione.PassoId);
+                avviso = "Azione registrata.";
+            }
+        }
+        finally
+        {
+            operazioneInCorso = false;
+            AggiornaStato();
+            StateHasChanged();
+        }
+    }
+
+    private async Task ConfermaAzione(AzioneGiocatore azione)
+    {
+        if (stanza == null || token == null) return;
+
+        operazioneInCorso = true;
+        errore = null;
+
+        try
+        {
+            var esito = await Stanze.ConfermaRisultatoGiocatoreAsync(stanza, token, azione.PassoId);
+            if (!esito.Ok)
+                errore = esito.Errore;
+            else
+                avviso = "Risultato confermato.";
+        }
+        finally
+        {
+            operazioneInCorso = false;
+            AggiornaStato();
+            StateHasChanged();
+        }
+    }
+
+    private async Task Vota()
+    {
+        if (stanza == null || token == null || string.IsNullOrWhiteSpace(votoScelto)) return;
+
+        operazioneInCorso = true;
+        errore = null;
+
+        try
+        {
+            var esito = await Stanze.RegistraVotoAsync(stanza, token, votoScelto);
+            if (!esito.Ok)
+            {
+                errore = esito.Errore;
+            }
+            else
+            {
+                votoScelto = null;
+                avviso = "Voto registrato.";
+            }
+        }
+        finally
+        {
+            operazioneInCorso = false;
+            AggiornaStato();
+            StateHasChanged();
+        }
+    }
+
+    private async Task VotaBallottaggio()
+    {
+        if (stanza == null || token == null || string.IsNullOrWhiteSpace(ballottaggioScelto)) return;
+
+        operazioneInCorso = true;
+        errore = null;
+
+        try
+        {
+            var esito = await Stanze.RegistraVotoBallottaggioAsync(stanza, token, ballottaggioScelto);
+            if (!esito.Ok)
+            {
+                errore = esito.Errore;
+            }
+            else
+            {
+                ballottaggioScelto = null;
+                avviso = "Voto registrato.";
+            }
+        }
+        finally
+        {
+            operazioneInCorso = false;
+            AggiornaStato();
+            StateHasChanged();
+        }
+    }
+
+    private async Task Esci()
+    {
+        var conferma = await Archivio.ConfermaAsync(
+            "Vuoi uscire? Il tuo posto resta riservato: potrai rientrare da questo dispositivo dalla home.");
+
+        if (!conferma) return;
+
+        // La sessione resta nel browser: il posto è ancora tuo e puoi
+        // riprendere dalla home. Per liberarlo davvero c'è "Dimentica".
+        Nav.NavigateTo("/");
+    }
+
+    private string NomeDi(string giocatoreId) =>
+        stato?.Giocatori.FirstOrDefault(g => g.Id == giocatoreId)?.Nome ?? "?";
+
+    private static string Nomi(IEnumerable<GiocatorePubblico> giocatori) =>
+        string.Join(", ", giocatori.Select(g => g.Nome));
+
+    private static int Percentuale(int valore, int totale) =>
+        totale <= 0 ? 0 : (int)Math.Round(100.0 * valore / totale);
+
+    public void Dispose()
+    {
+        if (sottoscritto)
+            Stanze.AnnullaSottoscrizione(Codice, OnStanzaAggiornata);
+    }
+}

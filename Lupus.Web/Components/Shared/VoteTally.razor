@@ -1,0 +1,45 @@
+@* Conteggio dei voti riutilizzabile dal telefono e dal narratore. *@
+<div class="vote-tally">
+    @if (Conteggi.Count == 0)
+    {
+        <p class="muted">Nessun voto registrato.</p>
+    }
+    else
+    {
+        @foreach (var conteggio in Conteggi)
+        {
+            <div class="tally-row">
+                <div class="tally-head">
+                    <strong>@conteggio.Nome</strong>
+                    <span>@conteggio.Voti @(conteggio.Voti == 1 ? "voto" : "voti")</span>
+                </div>
+                <div class="tally-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@Massimo" aria-valuenow="@conteggio.Voti">
+                    <div style="width: @Percentuale(conteggio.Voti)%"></div>
+                </div>
+                @if (conteggio.Elettori.Count > 0)
+                {
+                    <span class="tally-voters">@string.Join(", ", conteggio.Elettori)</span>
+                }
+            </div>
+        }
+    }
+
+    @if (NonVotanti.Count > 0)
+    {
+        <p class="muted small tally-missing">
+            Non hanno votato: @string.Join(", ", NonVotanti)
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ConteggioVoto> Conteggi { get; set; } = Array.Empty<ConteggioVoto>();
+    [Parameter] public IReadOnlyList<string> NonVotanti { get; set; } = Array.Empty<string>();
+    [Parameter] public int Votanti { get; set; }
+    [Parameter] public int Vivi { get; set; }
+
+    private int Massimo => Conteggi.Count == 0 ? 0 : Conteggi.Max(c => c.Voti);
+
+    private int Percentuale(int voti) =>
+        Massimo <= 0 ? 0 : (int)Math.Round(100.0 * voti / Massimo);
+}
