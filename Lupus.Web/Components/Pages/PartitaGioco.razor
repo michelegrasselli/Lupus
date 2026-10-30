@@ -241,7 +241,7 @@ else
                             else
                             {
                                 <p class="muted small step-actor">
-                                    @AttorePasso(passo). Il giocatore può agire dal telefono;
+                                    @AttorePasso(passo) Il giocatore può agire dal telefono;
                                     in alternativa scegli tu il bersaglio qui.
                                 </p>
 
@@ -308,7 +308,7 @@ else
                                             }
                                             else
                                             {
-                                                <p class="muted">@(s.Completato ? "Completato" : s == p.PassoCorrente ? $"Tocca a {AttoreBreve(s)}" : "In attesa")</p>
+                                                <p class="muted">@(s.Completato ? "Completato" : s == p.PassoCorrente ? ToccaA(s) : "In attesa")</p>
                                             }
                                         </div>
                                         <span class="step-row-state" aria-hidden="true">@(s.Completato ? "✓" : s == p.PassoCorrente ? "▶" : "…")</span>
@@ -1193,6 +1193,15 @@ else
         if (passo.Tipo == TipoPasso.Capobranco) return "tutti i lupi";
         if (passo.Potere == Potere.Lupo) return "il branco";
         return P.NomeDi(passo.AttoreId);
+    }
+
+    /// <summary>"Tocca a Giocatore 2", ma "Tocca al branco".</summary>
+    private string ToccaA(PassoNotte passo)
+    {
+        if (P == null) return "Tocca a ?";
+        if (passo.Tipo == TipoPasso.Capobranco) return "Toccano a tutti i lupi";
+        if (passo.Potere == Potere.Lupo) return "Tocca al branco";
+        return $"Tocca a {P.NomeDi(passo.AttoreId)}";
     }
 
     private string AttorePasso(PassoNotte passo)
