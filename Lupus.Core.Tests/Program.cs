@@ -16,6 +16,7 @@ var tests = new (string Nome, Action Test)[]
     ("Copione: copia il ruolo", Copione),
     ("Copione: può puntare un altro Copione", CopioniSiPuntano),
     ("Copione: copia un Copione che ha già copiato", CopioneCopiaCopioneTrasformato),
+    ("Ruoli morti: vengono comunque chiamati", RuoliMortiChiamati),
     ("Gufo: ballottaggio", GufoBallottaggio),
     ("Imputato: copia i poteri", Imputato),
     ("Serializzazione: salva e ricarica", Salvataggio),
@@ -416,6 +417,58 @@ static void CopioneCopiaCopioneTrasformato()
         "Il Copione 2 doveva diventare Veggente.");
     Require(G(p, "Copione2").Trasformato,
         "Il Copione 2 doveva risultare trasformato.");
+}
+
+static void RuoliMortiChiamati()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Veggente", Ruolo.Veggente),
+        ("Guardiano", Ruolo.Guardiano),
+        ("Becchino", Ruolo.Becchino),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino),
+        ("Carla", Ruolo.Contadino));
+
+    // Prima notte: il branco sbrana la Veggente, il Guardiano protegge il Lupo.
+    Notte(p);
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Veggente"),
+        Potere.Guardiano => Nome(p, "Lupo"),
+        Potere.Veggente => Nome(p, "Lupo"),
+        _ => null
+    });
+
+    Require(!G(p, "Veggente").Vivo, "La Veggente doveva morire la prima notte.");
+
+    // Giorno e rogo di Anna, così la seconda notte ha due morti.
+    MotoreLupus.VaiAlGiorno(p);
+    MotoreLupus.ApriVoto(p);
+    var esito = MotoreLupus.Vota(p, Nome(p, "Anna")!);
+    Require(esito.Ok, esito.Errore);
+    Require(p.Esito == null, "La partita non doveva finire dopo il primo rogo.");
+
+    MotoreLupus.ProssimaNotte(p);
+    Notte(p);
+
+    var veggente = G(p, "Veggente");
+    var passoVeggente = p.PassiNotte.FirstOrDefault(x => x.AttoreId == veggente.Id);
+    Require(passoVeggente != null, "La Veggente morta doveva essere chiamata lo stesso.");
+    Require(passoVeggente!.Completato && passoVeggente.Saltato,
+        "Il passo della Veggente morta doveva essere già chiuso.");
+    Require(passoVeggente.AttoreMorto,
+        "Il passo della Veggente morta doveva essere marcato come segnaposto.");
+    Require(passoVeggente.Risultato?.Contains("morto", StringComparison.OrdinalIgnoreCase) == true,
+        "Il narratore deve vedere che il passo è saltato perché l'attore è morto.");
+
+    var passoBecchino = p.PassiNotte.FirstOrDefault(x => x.AttoreId == G(p, "Becchino").Id);
+    Require(passoBecchino != null && !passoBecchino.Completato,
+        "Il Becchino vivo doveva avere il suo passo giocabile.");
+
+    var passoGuardiano = p.PassiNotte.FirstOrDefault(x => x.AttoreId == G(p, "Guardiano").Id);
+    Require(passoGuardiano != null && !passoGuardiano.Completato,
+        "Il Guardiano vivo doveva avere il suo passo giocabile.");
 }
 
 static void GufoBallottaggio()

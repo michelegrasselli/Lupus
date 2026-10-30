@@ -215,7 +215,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 ```
 
 - `Avvia` imposta turno 1, `NotteIntro`, prepara la notte e assegna il capobranco iniziale se manca.
-- `IniziaNotte` genera i `PassiNotte` in ordine di priorità. I passi senza bersagli validi vengono creati già completati con un risultato informativo.
+- `IniziaNotte` genera i `PassiNotte` in ordine di priorità. I passi senza bersagli validi vengono creati già completati con un risultato informativo. Anche gli attori morti ricevono un passo segnaposto già chiuso (`AttoreMorto = true`): il numero e l'ordine delle chiamate non devono rivelare quali ruoli sono caduti.
 - `EseguiPasso(partita, passoId, bersaglioId)` registra l'azione e calcola il risultato. Se `RichiedeConferma`, il passo resta non completato e la UI mostra il risultato con un pulsante di conferma; altrimenti si completa subito.
 - `ConfermaRisultato` completa un passo informativo che richiede conferma.
 - `RisolviNotte` applica morti, trappole, Kamikaze, Baby Lupo, Diavolo, Copioni e calcola il risultato dell'alba. Imposta `Fase = Alba` oppure `Finita` se c'è una vittoria.
@@ -233,6 +233,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 - `Partita.PassoCorrente` è il primo passo non completato.
 - `Partita.NotteCompleta` è `PassiNotte.All(p => p.Completato)`.
 - I passi informativi già completati hanno `Saltato = true` e `Risultato` valorizzato.
+- I passi segnaposto degli attori morti hanno `AttoreMorto = true`, `Completato = true` e `Saltato = true`; restano nel diario del narratore ma non vengono copiati nei quaderni dei giocatori.
 - I passi che richiedono conferma hanno `RichiedeConferma = true`; dopo `EseguiPasso` hanno `Risultato` ma `Completato = false`.
 - `Partita.UltimoRogoId` viene impostato da `EseguiRogo` e serve alla schermata di fine giornata. `PreparaNuovaNotte` lo azzera.
 - `Partita.BallottaggioIds` contiene i candidati del Gufo durante l'alba/giorno/voto; durante il ballottaggio contiene i candidati finali (votato + gufati).
@@ -255,6 +256,7 @@ Le regole sono state portate dalla console, correggendo i bug evidenti. Le modif
 11. **Annullatore**: blocca il potere del bersaglio per la notte. I Lupi sono immuni se ci sono più lupi vivi (branco).
 12. **Imputato**: copia i poteri di chi lo ha puntato quella notte e li usa subito. I passi dell'Imputato vengono generati solo dopo i passi con priorità inferiore a 10.
 13. **Vittoria**: Buoni se non restano lupi; Lupi se `lupi >= altri vivi`; Pareggio se non resta nessuno; Diavolo se sbranato e votato nello stesso turno.
+14. **Ruoli morti**: ogni ruolo notturno viene chiamato anche se il suo attore è morto. Il passo è un segnaposto già completato che non produce azioni, così i vivi non possono dedurre quali personaggi sono caduti dal numero o dall'ordine delle chiamate. Il branco resta una chiamata unica: i lupi morti non alterano la chiamata del branco.
 
 Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
@@ -323,7 +325,7 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 ## 10. Test
 
-`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 16 scenari:
+`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 17 scenari:
 
 1. Protezione del Guardiano.
 2. Morte senza protezione.
@@ -336,11 +338,12 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 9. Copione che copia un ruolo.
 10. Copione che punta un altro Copione.
 11. Copione che punta un Copione già trasformato.
-12. Gufo e ballottaggio.
-13. Imputato.
-14. Serializzazione.
-15. Validazione composizioni.
-16. Condizioni di vittoria.
+12. Ruoli morti chiamati come segnaposto.
+13. Gufo e ballottaggio.
+14. Imputato.
+15. Serializzazione.
+16. Validazione composizioni.
+17. Condizioni di vittoria.
 
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 

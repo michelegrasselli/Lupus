@@ -84,6 +84,14 @@ public sealed class PassoNotte
     public bool RichiedeConferma { get; set; }
     public bool Completato { get; set; }
     public bool Saltato { get; set; }
+
+    /// <summary>
+    /// Passo segnaposto di un attore morto: viene creato e chiuso subito,
+    /// così l'elenco dei passi non rivela quali ruoli sono morti. Non va
+    /// copiato nel quaderno del giocatore.
+    /// </summary>
+    public bool AttoreMorto { get; set; }
+
     public string? Risultato { get; set; }
 }
 

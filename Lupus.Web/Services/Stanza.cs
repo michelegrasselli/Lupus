@@ -168,6 +168,11 @@ public sealed class Stanza
                 if (!passo.Completato || string.IsNullOrWhiteSpace(passo.Risultato))
                     continue;
 
+                // I segnaposto dei morti restano nel diario del narratore,
+                // non nel quaderno del giocatore.
+                if (passo.AttoreMorto)
+                    continue;
+
                 IEnumerable<string> destinatari;
 
                 if (passo.Tipo == TipoPasso.Capobranco || passo.Potere == Potere.Lupo)

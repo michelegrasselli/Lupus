@@ -71,7 +71,10 @@ public static class MotoreLupus
         {
             if (!info.AzioneNotturna) continue;
 
-            var attori = p.Vivi.Where(g => g.Ruolo == info.Ruolo).ToList();
+            // Anche i morti vengono chiamati: il loro passo è un segnaposto
+            // già chiuso, così l'ordine delle chiamate non rivela quali ruoli
+            // sono caduti.
+            var attori = p.Giocatori.Where(g => g.Ruolo == info.Ruolo).ToList();
             if (attori.Count == 0) continue;
 
             switch (info.Ruolo)
@@ -82,6 +85,9 @@ public static class MotoreLupus
                 case Ruolo.Imputato:
                     // I passi dell'Imputato dipendono da chi lo ha puntato:
                     // vengono generati quando tutti i poteri precedenti sono completati.
+                    // I morti ricevono subito il loro segnaposto.
+                    foreach (var attore in attori.Where(a => !a.Vivo))
+                        AggiungiPassoMorto(p, attore, info.Priorita);
                     break;
                 case Ruolo.Becchino:
                     foreach (var attore in attori) AggiungiPassoBecchino(p, attore);
@@ -596,6 +602,12 @@ public static class MotoreLupus
 
     private static void AggiungiPassoAzione(Partita p, Giocatore attore, Potere potere, int priorita)
     {
+        if (!attore.Vivo)
+        {
+            AggiungiPassoMorto(p, attore, priorita);
+            return;
+        }
+
         var opzioni = OpzioniPerPotere(p, attore, potere);
         var titolo = $"{Ruoli.Info(attore.Ruolo).Icona} {Ruoli.Nome(attore.Ruolo)} · {attore.Nome}";
 
@@ -622,6 +634,12 @@ public static class MotoreLupus
 
     private static void AggiungiPassoBecchino(Partita p, Giocatore attore)
     {
+        if (!attore.Vivo)
+        {
+            AggiungiPassoMorto(p, attore, 6);
+            return;
+        }
+
         var opzioni = OpzioniPerPotere(p, attore, Potere.Becchino);
         var titolo = $"⚰️ Becchino · {attore.Nome}";
 
@@ -648,6 +666,12 @@ public static class MotoreLupus
 
     private static void AggiungiPassoCacciatore(Partita p, Giocatore attore)
     {
+        if (!attore.Vivo)
+        {
+            AggiungiPassoMorto(p, attore, 2);
+            return;
+        }
+
         var titolo = $"🪤 Cacciatore · {attore.Nome}";
 
         if (attore.TrappolaInCooldown)
@@ -664,6 +688,12 @@ public static class MotoreLupus
 
     private static void AggiungiPassoCopione(Partita p, Giocatore attore, Potere potere, int priorita)
     {
+        if (!attore.Vivo)
+        {
+            AggiungiPassoMorto(p, attore, priorita);
+            return;
+        }
+
         var opzioni = OpzioniPerPotere(p, attore, potere);
         var titolo = $"🎭 {Ruoli.Nome(attore.Ruolo)} · {attore.Nome}";
 
@@ -751,6 +781,23 @@ public static class MotoreLupus
         int index = p.PassiNotte.FindIndex(x => x.Priorita > 10);
         if (index < 0) p.PassiNotte.AddRange(nuovi);
         else p.PassiNotte.InsertRange(index, nuovi);
+    }
+
+    /// <summary>
+    /// Segnaposto per un attore morto: il ruolo viene comunque "chiamato"
+    /// ogni notte, ma il passo nasce già completato e non produce azioni.
+    /// Serve a non far dedurre ai vivi quali ruoli sono caduti dall'ordine
+    /// o dal numero delle chiamate.
+    /// </summary>
+    private static void AggiungiPassoMorto(Partita p, Giocatore attore, int priorita)
+    {
+        var titolo = $"{Ruoli.Info(attore.Ruolo).Icona} {Ruoli.Nome(attore.Ruolo)} · {attore.Nome}";
+        var passo = PassoCompletato(
+            p, attore, priorita, titolo,
+            $"{attore.Nome} è morto: stanotte non agisce.", TipoLog.Info);
+
+        passo.AttoreMorto = true;
+        p.PassiNotte.Add(passo);
     }
 
     private static PassoNotte PassoCompletato(
