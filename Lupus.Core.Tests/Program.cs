@@ -242,6 +242,23 @@ static void PuttanaConLupo()
 
     Require(!G(p, "Puttana").Vivo, "La Puttana doveva morire dopo la notte con il Lupo.");
     Require(!G(p, "Anna").Vivo, "Anna doveva essere sbranata.");
+
+    // Privacy: la Puttana non deve sapere di aver scelto un Lupo, né che
+    // morirà. Il dettaglio resta nel diario del narratore.
+    var passoPuttana = p.PassiNotte.First(x => x.Potere == Potere.Puttana);
+    var risultato = passoPuttana.Risultato ?? "";
+
+    Require(risultato.Contains(G(p, "Lupo").Nome),
+        "La Puttana deve comunque sapere chi ha scelto.");
+    Require(!risultato.Contains("è un Lupo", StringComparison.OrdinalIgnoreCase),
+        $"Il risultato della Puttana rivela il Lupo: '{risultato}'");
+    Require(!risultato.Contains("morirà", StringComparison.OrdinalIgnoreCase),
+        $"Il risultato della Puttana anticipa la morte: '{risultato}'");
+    Require(!risultato.Contains("Attenzione", StringComparison.OrdinalIgnoreCase),
+        $"Il risultato della Puttana è troppo allarmante: '{risultato}'");
+
+    Require(p.Log.Any(v => v.Testo.Contains("Solo narratore", StringComparison.OrdinalIgnoreCase)),
+        "Il narratore deve comunque vedere nel diario che il bersaglio era un Lupo.");
 }
 
 static void Annullatore()

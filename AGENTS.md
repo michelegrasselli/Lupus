@@ -164,6 +164,11 @@ direttamente `Partita` o `Giocatore` a `Gioca.razor`.
   privato (o finale).
 - `AzioneGiocatore.Risultato` è popolato solo per i passi autorizzati al giocatore.
 - `EventiAlba` esclude gli eventi con `Riservato = true`.
+- Il **risultato di un passo non deve rivelare ciò che il potere non dice**: la Puttana
+  (e l'Imputato con potere copiato) sa con chi ha passato la notte, **non** se era un Lupo
+  né che morirà. I dettagli extra vanno in `MotoreLupus.NotaNarratore`, che finisce solo nel
+  diario del narratore. Vale per ogni nuovo potere: prima di scrivere `passo.Risultato`,
+  chiedersi se quella frase è lecita per il ruolo che la legge.
 - Il diario (`Partita.Log`) è **solo del narratore** e non viene mai serializzato verso il
   telefono.
 - `PlayerPicker` espone ruoli e accenti: usalo solo nel pannello narratore. Per i giocatori

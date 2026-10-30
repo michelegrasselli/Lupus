@@ -1436,15 +1436,21 @@ else
 
     private async Task ChiudiStanza()
     {
-        if (stanza == null) return;
+        // Il codice va salvato subito: AbbandonaAsync notifica i circuiti e
+        // il callback può azzerare `stanza` prima che si arrivi alla pulizia
+        // della sessione.
+        var corrente = stanza;
+        if (corrente == null) return;
+
+        var codice = corrente.Codice;
 
         var conferma = await Archivio.ConfermaAsync(
             "Vuoi chiudere la stanza? I telefoni verranno disconnessi e la partita non sarà più raggiungibile.");
 
         if (!conferma) return;
 
-        await Stanze.AbbandonaAsync(stanza, hostToken!);
-        await Sessioni.RimuoviAsync(stanza.Codice, TipoSessione.Host);
+        await Stanze.AbbandonaAsync(corrente, hostToken ?? "");
+        await Sessioni.RimuoviAsync(codice, TipoSessione.Host);
         stanza = null;
         Nav.NavigateTo("/");
     }

@@ -226,8 +226,13 @@ public static class MotoreLupus
 
         passo.Risultato = CalcolaRisultato(p, attore, bersaglio, passo.Potere);
         passo.Completato = !passo.RichiedeConferma;
+
+        // Il diario è solo del narratore: qui possiamo dire ciò che il
+        // giocatore non deve sapere.
+        var nota = NotaNarratore(attore, bersaglio, passo.Potere);
         p.AggiungiLog(
-            $"{attore.Nome} usa {EtichettaPotere(passo.Potere)} su {bersaglio.Nome}. {passo.Risultato}",
+            $"{attore.Nome} usa {EtichettaPotere(passo.Potere)} su {bersaglio.Nome}. {passo.Risultato}"
+            + (nota is null ? "" : $" {nota}"),
             TipoLog.Potere);
 
         AggiornaPassiImputato(p);
@@ -810,8 +815,8 @@ public static class MotoreLupus
                 return $"{bersaglio.Nome} andrà al ballottaggio del prossimo giorno.";
 
             case Potere.Puttana:
-                if (bersaglio.Ruolo == Ruolo.Lupo)
-                    return $"Attenzione: {bersaglio.Nome} è un Lupo. {attore.Nome} morirà all'alba, se non protetto.";
+                // La Puttana non deve sapere se ha scelto un Lupo: lo scopre
+                // solo all'alba, quando eventualmente muore.
                 return $"{attore.Nome} passerà la notte con {bersaglio.Nome}.";
 
             case Potere.Veggente:
@@ -843,13 +848,27 @@ public static class MotoreLupus
                 return $"{bersaglio.Nome} andrà al ballottaggio del prossimo giorno (potere copiato).";
 
             case Potere.ImputatoPuttana:
-                if (bersaglio.Ruolo == Ruolo.Lupo)
-                    return $"Attenzione: {bersaglio.Nome} è un Lupo. {attore.Nome} morirà all'alba, se non protetto.";
                 return $"{attore.Nome} passerà la notte con {bersaglio.Nome} (potere copiato).";
 
             default:
                 return "";
         }
+    }
+
+    /// <summary>
+    /// Dettagli che restano al narratore: il giocatore non deve scoprire ciò
+    /// che il suo potere non gli dice esplicitamente. Finiscono solo nel
+    /// diario, che non viene mai serializzato verso i telefoni.
+    /// </summary>
+    private static string? NotaNarratore(Giocatore attore, Giocatore bersaglio, Potere potere)
+    {
+        if (potere is not (Potere.Puttana or Potere.ImputatoPuttana))
+            return null;
+
+        if (bersaglio.Ruolo != Ruolo.Lupo)
+            return null;
+
+        return $"(Solo narratore: {bersaglio.Nome} è un Lupo, quindi {attore.Nome} morirà all'alba se non protetto.)";
     }
 
     private static string CalcolaSpia(Partita p, Giocatore attore, Giocatore bersaglio)
