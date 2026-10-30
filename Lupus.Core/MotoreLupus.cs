@@ -380,20 +380,35 @@ public static class MotoreLupus
         }
 
         // --- Copioni ---
+        // I Copioni possono puntarsi a vicenda. La copia si risolve sui ruoli
+        // com'erano all'inizio dell'alba, così l'ordine dei passi non cambia
+        // l'esito: chi punta un Copione resta un Copione e potrà copiare di
+        // nuovo la notte successiva.
+        var ruoliPrimaDellAlba = p.Giocatori.ToDictionary(g => g.Id, g => g.Ruolo);
+
         foreach (var azione in azioni.Where(a => a.Potere is Potere.Copione or Potere.Copione2))
         {
             var attore = p.Giocatore(azione.AttoreId);
             var bersaglio = p.Giocatore(azione.BersaglioId);
             if (attore == null || !attore.Vivo || bersaglio == null) continue;
-            if (bersaglio.Ruolo is Ruolo.Copione or Ruolo.Copione2) continue;
+
+            var ruoloCopiato = ruoliPrimaDellAlba.GetValueOrDefault(bersaglio.Id, bersaglio.Ruolo);
+
+            if (ruoloCopiato is Ruolo.Copione or Ruolo.Copione2)
+            {
+                p.AggiungiLog(
+                    $"{attore.Nome} ha puntato {bersaglio.Nome}, che è ancora un Copione: resta un Copione.",
+                    TipoLog.Trasformazione);
+                continue;
+            }
 
             attore.RuoloIniziale ??= attore.Ruolo;
-            attore.Ruolo = bersaglio.Ruolo;
+            attore.Ruolo = ruoloCopiato;
             attore.Trasformato = true;
             attore.Capobranco = false;
             risultato.TrasformatiIds.Add(attore.Id);
 
-            var testo = $"{attore.Nome} ha copiato il ruolo di {bersaglio.Nome}: ora è {Ruoli.Nome(bersaglio.Ruolo)}.";
+            var testo = $"{attore.Nome} ha copiato il ruolo di {bersaglio.Nome}: ora è {Ruoli.Nome(ruoloCopiato)}.";
             p.AggiungiLog(testo, TipoLog.Trasformazione);
             p.AggiungiEvento(risultato, testo, true);
         }
@@ -832,6 +847,10 @@ public static class MotoreLupus
 
             case Potere.Copione:
             case Potere.Copione2:
+                // Puntare un Copione è lecito: non c'è nulla da copiare e si
+                // resta Copioni, potendo riprovare la notte successiva.
+                if (bersaglio.Ruolo is Ruolo.Copione or Ruolo.Copione2)
+                    return $"{bersaglio.Nome} è ancora un Copione: resterai un Copione.";
                 return $"Dalla prossima notte {attore.Nome} sarà {Ruoli.Nome(bersaglio.Ruolo)}.";
 
             case Potere.ImputatoLupo:
@@ -952,9 +971,7 @@ public static class MotoreLupus
                 p.Vivi.Select(g => g.Id).ToList(),
 
             Potere.Copione or Potere.Copione2 =>
-                p.Vivi.Where(g => g.Id != attore.Id &&
-                                  g.Ruolo != Ruolo.Copione &&
-                                  g.Ruolo != Ruolo.Copione2)
+                p.Vivi.Where(g => g.Id != attore.Id)
                     .Select(g => g.Id).ToList(),
 
             _ => new List<string>()

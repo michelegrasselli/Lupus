@@ -14,6 +14,8 @@ var tests = new (string Nome, Action Test)[]
     ("Annullatore: blocca la Veggente", Annullatore),
     ("Diavolo: sopravvive e vince se votato", Diavolo),
     ("Copione: copia il ruolo", Copione),
+    ("Copione: può puntare un altro Copione", CopioniSiPuntano),
+    ("Copione: copia un Copione che ha già copiato", CopioneCopiaCopioneTrasformato),
     ("Gufo: ballottaggio", GufoBallottaggio),
     ("Imputato: copia i poteri", Imputato),
     ("Serializzazione: salva e ricarica", Salvataggio),
@@ -338,6 +340,82 @@ static void Copione()
     Require(G(p, "Copione").Vivo, "Il Copione doveva essere vivo.");
     Require(G(p, "Copione").Ruolo == Ruolo.Veggente, "Il Copione doveva diventare Veggente.");
     Require(G(p, "Copione").Trasformato, "Il flag Trasformato doveva essere attivo.");
+}
+
+static void CopioniSiPuntano()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Copione", Ruolo.Copione),
+        ("Copione2", Ruolo.Copione2),
+        ("Veggente", Ruolo.Veggente),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino));
+
+    Notte(p);
+
+    var passoCopione = p.PassiNotte.First(x => x.Potere == Potere.Copione);
+    Require(passoCopione.OpzioniIds.Contains(G(p, "Copione2").Id),
+        "Il Copione deve poter puntare l'altro Copione.");
+
+    var passoCopione2 = p.PassiNotte.First(x => x.Potere == Potere.Copione2);
+    Require(passoCopione2.OpzioniIds.Contains(G(p, "Copione").Id),
+        "Il Copione 2 deve poter puntare l'altro Copione.");
+
+    // Si puntano a vicenda: nessuno dei due ha ancora copiato, quindi
+    // entrambi restano Copioni.
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Anna"),
+        Potere.Copione => Nome(p, "Copione2"),
+        Potere.Copione2 => Nome(p, "Copione"),
+        Potere.Veggente => Nome(p, "Lupo"),
+        _ => null
+    });
+
+    Require(G(p, "Copione").Vivo, "Il Copione doveva essere vivo.");
+    Require(G(p, "Copione").Ruolo == Ruolo.Copione,
+        "Chi punta un Copione che non ha ancora copiato deve restare un Copione.");
+    Require(G(p, "Copione2").Ruolo == Ruolo.Copione2,
+        "Chi punta un Copione che non ha ancora copiato deve restare un Copione.");
+    Require(!G(p, "Copione").Trasformato,
+        "Un Copione che punta un Copione non deve risultare trasformato.");
+
+    var risultato = p.PassiNotte.First(x => x.Potere == Potere.Copione).Risultato ?? "";
+    Require(risultato.Contains("ancora un Copione", StringComparison.OrdinalIgnoreCase),
+        $"Il Copione deve sapere di essere rimasto tale: '{risultato}'");
+}
+
+static void CopioneCopiaCopioneTrasformato()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Copione", Ruolo.Copione),
+        ("Copione2", Ruolo.Copione2),
+        ("Veggente", Ruolo.Veggente),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino));
+
+    Notte(p);
+
+    // Il Copione 2 copia la Veggente, il Copione punta il Copione 2. La copia
+    // si risolve sui ruoli di inizio alba: il Copione resta Copione, mentre
+    // il Copione 2 diventa Veggente.
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Anna"),
+        Potere.Copione => Nome(p, "Copione2"),
+        Potere.Copione2 => Nome(p, "Veggente"),
+        Potere.Veggente => Nome(p, "Lupo"),
+        _ => null
+    });
+
+    Require(G(p, "Copione").Ruolo == Ruolo.Copione,
+        "Chi punta un Copione deve restare Copione anche se quello copia qualcun altro.");
+    Require(G(p, "Copione2").Ruolo == Ruolo.Veggente,
+        "Il Copione 2 doveva diventare Veggente.");
+    Require(G(p, "Copione2").Trasformato,
+        "Il Copione 2 doveva risultare trasformato.");
 }
 
 static void GufoBallottaggio()

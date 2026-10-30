@@ -248,7 +248,7 @@ Le regole sono state portate dalla console, correggendo i bug evidenti. Le modif
 4. **Kamikaze**: se il branco lo attacca, il Kamikaze sopravvive e muore il capobranco. Se è protetto dal Guardiano, la protezione ha la precedenza e non esplode.
 5. **Baby Lupo**: se attaccato dal branco non muore, si trasforma in Lupo all'alba (`RuoloIniziale` conservato, `Trasformato = true`).
 6. **Diavolo**: se sbranato sopravvive con `DiavoloSbranato = true`. Se viene anche votato nello stesso turno, vince da solo. Il flag viene azzerato solo dopo il rogo, non all'inizio del giorno.
-7. **Copione / Copione 2**: copiano il ruolo di un giocatore e la trasformazione avviene all'alba. Non possono copiare un altro Copione.
+7. **Copione / Copione 2**: copiano il ruolo di un giocatore e la trasformazione avviene all'alba. Possono puntarsi a vicenda: se il bersaglio è ancora un Copione non copiano nulla e restano Copioni, potendo riprovare la notte successiva. La copia si risolve sui ruoli di inizio alba, così l'ordine dei passi non cambia l'esito.
 8. **Gufo**: il suo bersaglio finisce al ballottaggio del giorno successivo. Il ballottaggio avviene tra il giocatore votato e i giocatori segnati dal Gufo, non solo tra i gufati.
 9. **Cacciatore**: dopo aver piazzato una trappola, la notte successiva non può piazzarne un'altra (`TrappolaInCooldown`).
 10. **Sfigato**: appare CATTIVO alle indagini (Veggente/Becchino), ma non è un Lupo e non conta per la vittoria del branco.
@@ -323,7 +323,7 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 ## 10. Test
 
-`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 14 scenari:
+`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 16 scenari:
 
 1. Protezione del Guardiano.
 2. Morte senza protezione.
@@ -333,12 +333,14 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 6. Puttana con Lupo.
 7. Annullatore sulla Veggente.
 8. Diavolo.
-9. Copione.
-10. Gufo e ballottaggio.
-11. Imputato.
-12. Serializzazione.
-13. Validazione composizioni.
-14. Condizioni di vittoria.
+9. Copione che copia un ruolo.
+10. Copione che punta un altro Copione.
+11. Copione che punta un Copione già trasformato.
+12. Gufo e ballottaggio.
+13. Imputato.
+14. Serializzazione.
+15. Validazione composizioni.
+16. Condizioni di vittoria.
 
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 
