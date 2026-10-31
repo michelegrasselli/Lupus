@@ -166,9 +166,11 @@ direttamente `Partita` o `Giocatore` a `Gioca.razor`.
 - `EventiAlba` esclude gli eventi con `Riservato = true`.
 - Il **risultato di un passo non deve rivelare ciò che il potere non dice**: la Puttana
   (e l'Imputato con potere copiato) sa con chi ha passato la notte, **non** se era un Lupo
-  né che morirà. I dettagli extra vanno in `MotoreLupus.NotaNarratore`, che finisce solo nel
-  diario del narratore. Vale per ogni nuovo potere: prima di scrivere `passo.Risultato`,
-  chiedersi se quella frase è lecita per il ruolo che la legge.
+  né che morirà. La Spia scopre solo **chi** ha puntato il bersaglio, **non** con quale
+  potere: non aggiungere il ruolo dell'attore al risultato. I dettagli extra vanno in
+  `MotoreLupus.NotaNarratore`, che finisce solo nel diario del narratore. Vale per ogni nuovo
+  potere: prima di scrivere `passo.Risultato`, chiedersi se quella frase è lecita per il
+  ruolo che la legge.
 - Il diario (`Partita.Log`) è **solo del narratore** e non viene mai serializzato verso il
   telefono.
 - `PlayerPicker` espone ruoli e accenti: usalo solo nel pannello narratore. Per i giocatori
@@ -178,7 +180,8 @@ direttamente `Partita` o `Giocatore` a `Gioca.razor`.
 
 `StatoGiocatoreFactory.Autorizzato(giocatore, passo)`:
 
-- `TipoPasso.Capobranco` → qualsiasi Lupo vivo.
+- `TipoPasso.Capobranco` → qualsiasi Lupo vivo. Il passo non viene più generato (il
+  capobranco è scelto a caso dal motore), ma resta gestito per i salvataggi vecchi.
 - `Potere.Lupo` → qualsiasi Lupo vivo.
 - altrimenti → solo `passo.AttoreId`.
 
@@ -214,8 +217,8 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
                                                               ↘ Finita
 ```
 
-- `Avvia` imposta turno 1, `NotteIntro`, prepara la notte e assegna il capobranco iniziale se manca.
-- `IniziaNotte` genera i `PassiNotte` in ordine di priorità. I passi senza bersagli validi vengono creati già completati con un risultato informativo. Anche gli attori morti ricevono un passo segnaposto già chiuso (`AttoreMorto = true`): il numero e l'ordine delle chiamate non devono rivelare quali ruoli sono caduti.
+- `Avvia` imposta turno 1, `NotteIntro`, prepara la notte e assegna a caso il capobranco iniziale se manca.
+- `IniziaNotte` genera i `PassiNotte` in ordine di priorità. Se il capobranco è caduto o ha cambiato ruolo, ne viene scelto subito un altro a caso tra i Lupi vivi (non esiste più un passo di elezione manuale). I passi senza bersagli validi vengono creati già completati con un risultato informativo. Anche gli attori morti ricevono un passo segnaposto già chiuso (`AttoreMorto = true`): il numero e l'ordine delle chiamate non devono rivelare quali ruoli sono caduti.
 - `EseguiPasso(partita, passoId, bersaglioId)` registra l'azione e calcola il risultato. Se `RichiedeConferma`, il passo resta non completato e la UI mostra il risultato con un pulsante di conferma; altrimenti si completa subito.
 - `ConfermaRisultato` completa un passo informativo che richiede conferma.
 - `RisolviNotte` applica morti, trappole, Kamikaze, Baby Lupo, Diavolo, Copioni e calcola il risultato dell'alba. Imposta `Fase = Alba` oppure `Finita` se c'è una vittoria.
@@ -226,7 +229,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 
 ### API pubblica di `MotoreLupus`
 
-`Avvia`, `IniziaNotte`, `EseguiPasso`, `ConfermaRisultato`, `RisolviNotte`, `VaiAlGiorno`, `ApriVoto`, `Vota`, `ScegliBallottaggio`, `ProssimaNotte`, `ControllaVittoria`, `ImpostaCapobranco`, `OpzioniPerPotere`, `DescrizionePotere`, `EtichettaPotere`.
+`Avvia`, `IniziaNotte`, `EseguiPasso`, `ConfermaRisultato`, `RisolviNotte`, `VaiAlGiorno`, `ApriVoto`, `Vota`, `ScegliBallottaggio`, `ProssimaNotte`, `ControllaVittoria`, `ImpostaCapobranco`, `AssegnaCapobrancoCasuale`, `OpzioniPerPotere`, `DescrizionePotere`, `EtichettaPotere`.
 
 ### Invarianti utili
 
@@ -238,6 +241,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 - `Partita.UltimoRogoId` viene impostato da `EseguiRogo` e serve alla schermata di fine giornata. `PreparaNuovaNotte` lo azzera.
 - `Partita.BallottaggioIds` contiene i candidati del Gufo durante l'alba/giorno/voto; durante il ballottaggio contiene i candidati finali (votato + gufati).
 - `Partita.Esito` non nullo significa partita decisa; la fase può essere `Alba` (vittoria notturna) o `Finita`.
+- Il capobranco è sempre esattamente uno tra i Lupi vivi (se ce ne sono) e viene scelto a caso all'avvio e dopo ogni morte o trasformazione del capo. `AssegnaCapobrancoCasuale` azzera i vecchi flag prima di scegliere.
 
 ## 7. Regole e correzioni rispetto alla versione console
 
@@ -325,7 +329,7 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 ## 10. Test
 
-`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 17 scenari:
+`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 20 scenari:
 
 1. Protezione del Guardiano.
 2. Morte senza protezione.
@@ -341,9 +345,12 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 12. Ruoli morti chiamati come segnaposto.
 13. Gufo e ballottaggio.
 14. Imputato.
-15. Serializzazione.
-16. Validazione composizioni.
-17. Condizioni di vittoria.
+15. Capobranco scelto a caso tra i Lupi.
+16. Capobranco rimpiazzato a caso dopo la morte.
+17. Spia che non rivela il potere di chi ha puntato.
+18. Serializzazione.
+19. Validazione composizioni.
+20. Condizioni di vittoria.
 
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 

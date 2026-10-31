@@ -19,6 +19,9 @@ var tests = new (string Nome, Action Test)[]
     ("Ruoli morti: vengono comunque chiamati", RuoliMortiChiamati),
     ("Gufo: ballottaggio", GufoBallottaggio),
     ("Imputato: copia i poteri", Imputato),
+    ("Capobranco: scelto a caso tra i lupi", CapobrancoCasuale),
+    ("Capobranco: rimpiazzato a caso dopo la morte", CapobrancoRimpiazzato),
+    ("Spia: non rivela il potere di chi ha puntato", SpiaNonRivelaPotere),
     ("Serializzazione: salva e ricarica", Salvataggio),
     ("Validazione: composizioni", Validazione),
     ("Vittoria: condizioni base", Vittoria)
@@ -54,9 +57,6 @@ static Partita Crea(params (string Nome, Ruolo Ruolo)[] giocatori)
     {
         p.Giocatori.Add(new Giocatore { Nome = nome, Ruolo = ruolo });
     }
-
-    var lupo = p.Giocatori.FirstOrDefault(g => g.Ruolo == Ruolo.Lupo);
-    if (lupo != null) lupo.Capobranco = true;
 
     MotoreLupus.Avvia(p);
     return p;
@@ -543,6 +543,99 @@ static void Imputato()
     Require(passiImputato.Any(x => x.Potere == Potere.ImputatoVeggente &&
                                    x.Risultato?.Contains("CATTIVO") == true),
         "Il potere copiato della Veggente doveva vedere il Lupo come CATTIVO.");
+}
+
+static void CapobrancoCasuale()
+{
+    // Ruoli fissi: A e B sono i due Lupi. Se il capobranco fosse sempre il
+    // primo lupo della lista, uscirebbe sempre A.
+    var composizione = new Dictionary<Ruolo, int>
+    {
+        [Ruolo.Lupo] = 2,
+        [Ruolo.Veggente] = 1,
+        [Ruolo.Contadino] = 3
+    };
+    var nomi = new[] { "A", "B", "C", "D", "E", "F" };
+    var scelti = new HashSet<string>();
+
+    for (int i = 0; i < 100; i++)
+    {
+        var p = CreazionePartita.Crea(nomi, composizione, assegnaCasualmente: false);
+
+        var capi = p.Giocatori.Where(g => g.Capobranco).ToList();
+        Require(capi.Count == 1, $"Ci deve essere un solo capobranco, trovati {capi.Count}.");
+        Require(capi[0].Vivo && capi[0].Ruolo == Ruolo.Lupo,
+            "Il capobranco deve essere un Lupo vivo.");
+        scelti.Add(capi[0].Nome);
+    }
+
+    Require(scelti.SetEquals(new[] { "A", "B" }),
+        $"Il capobranco doveva variare tra i Lupi, scelti: {string.Join(", ", scelti)}.");
+}
+
+static void CapobrancoRimpiazzato()
+{
+    // Tre Lupi (A, B, C). A viene mandato al rogo: il nuovo capobranco deve
+    // essere scelto a caso tra B e C, mai restare il morto.
+    var composizione = new Dictionary<Ruolo, int>
+    {
+        [Ruolo.Lupo] = 3,
+        [Ruolo.Veggente] = 1,
+        [Ruolo.Contadino] = 4
+    };
+    var nomi = new[] { "A", "B", "C", "D", "E", "F", "G", "H" };
+    var scelti = new HashSet<string>();
+
+    for (int i = 0; i < 100; i++)
+    {
+        var p = CreazionePartita.Crea(nomi, composizione, assegnaCasualmente: false);
+        MotoreLupus.ImpostaCapobranco(p, G(p, "A").Id);
+
+        p.Fase = FasePartita.Giorno;
+        MotoreLupus.ApriVoto(p);
+        var esito = MotoreLupus.Vota(p, G(p, "A").Id);
+        Require(esito.Ok, esito.Errore);
+        Require(!G(p, "A").Vivo, "A doveva andare al rogo.");
+        Require(p.Esito == null, "La partita non doveva finire con il rogo di A.");
+
+        var capi = p.Giocatori.Where(g => g.Capobranco).ToList();
+        Require(capi.Count == 1, $"Ci deve essere un solo capobranco, trovati {capi.Count}.");
+        Require(capi[0].Vivo && capi[0].Ruolo == Ruolo.Lupo,
+            "Il nuovo capobranco deve essere un Lupo vivo.");
+        Require(capi[0].Nome != "A", "Il capobranco morto non deve restare in carica.");
+        scelti.Add(capi[0].Nome);
+    }
+
+    Require(scelti.SetEquals(new[] { "B", "C" }),
+        $"Il nuovo capobranco doveva variare tra B e C, scelti: {string.Join(", ", scelti)}.");
+}
+
+static void SpiaNonRivelaPotere()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Spia", Ruolo.Spia),
+        ("Anna", Ruolo.Veggente),
+        ("Bruno", Ruolo.Contadino),
+        ("Carla", Ruolo.Contadino),
+        ("Dario", Ruolo.Contadino));
+
+    Notte(p);
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Bruno"),
+        Potere.Veggente => Nome(p, "Spia"),
+        Potere.Spia => Nome(p, "Spia"),
+        _ => null
+    });
+
+    var passoSpia = p.PassiNotte.First(x => x.Potere == Potere.Spia);
+    var risultato = passoSpia.Risultato ?? "";
+
+    // La Spia deve sapere chi l'ha puntata (Anna), ma non che Anna è la Veggente.
+    Require(risultato.Contains("Anna"), $"La Spia non vede chi l'ha puntata: '{risultato}'");
+    Require(!risultato.Contains("Veggente", StringComparison.OrdinalIgnoreCase),
+        $"La Spia scopre anche il potere di chi l'ha puntata: '{risultato}'");
 }
 
 static void Salvataggio()

@@ -76,10 +76,8 @@ public static class CreazionePartita
             });
         }
 
-        var primoLupo = partita.Giocatori.FirstOrDefault(g => g.Ruolo == Ruolo.Lupo);
-        if (primoLupo != null)
-            primoLupo.Capobranco = true;
-
+        // Il capobranco viene scelto a caso da Avvia, così non è sempre il
+        // primo Lupo della lista (che dipende dall'ordine dei nomi).
         MotoreLupus.Avvia(partita);
         return partita;
     }

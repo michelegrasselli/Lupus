@@ -37,6 +37,11 @@ public sealed class StanzeService
     {
         partita.Normalizza();
 
+        // Un salvataggio importato potrebbe non avere il capobranco (o averlo
+        // perso): il branco ne sceglie uno a caso tra i Lupi vivi.
+        if (partita.Capobranco == null && partita.LupiVivi.Any())
+            MotoreLupus.AssegnaCapobrancoCasuale(partita);
+
         lock (_lock)
         {
             Pulizia();

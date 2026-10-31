@@ -211,7 +211,7 @@ else
                     {
                         <div class="card step-card">
                             <div class="step-progress">
-                                <span>Passo @(PassiCompletati + 1) di @PassiTotali</span>
+                                <span>Passo @PassoCorrenteNumero di @PassiTotali</span>
                                 <div class="step-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@PassiTotali" aria-valuenow="@PassiCompletati">
                                     <div style="width: @PercentualePassi%"></div>
                                 </div>
@@ -955,6 +955,16 @@ else
     private int PassiTotali => P?.PassiNotte.Count ?? 0;
 
     private int PassiCompletati => P?.PassiNotte.Count(x => x.Completato) ?? 0;
+
+    /// <summary>
+    /// Posizione del passo corrente nella sequenza, non il numero di passi
+    /// già chiusi: alcuni passi informativi nascono completati e non sono in
+    /// testa alla lista, quindi "completati + 1" mostrerebbe un numero sbagliato.
+    /// </summary>
+    private int PassoCorrenteNumero =>
+        P is { PassoCorrente: { } passo }
+            ? P.PassiNotte.IndexOf(passo) + 1
+            : PassiTotali;
 
     private int PercentualePassi => Percentuale(PassiCompletati, PassiTotali);
 

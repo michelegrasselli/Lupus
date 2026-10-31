@@ -21,10 +21,7 @@ public static class MotoreLupus
 
         var lupi = p.LupiVivi.ToList();
         if (lupi.Count > 0 && p.Capobranco == null)
-        {
-            lupi[0].Capobranco = true;
-            p.AggiungiLog($"Capobranco iniziale: {lupi[0].Nome}.", TipoLog.Configurazione);
-        }
+            AssegnaCapobrancoCasuale(p);
 
         var composizione = string.Join(", ",
             p.Giocatori.GroupBy(g => g.Ruolo)
@@ -49,23 +46,10 @@ public static class MotoreLupus
             return;
         }
 
-        if (lupi.Count == 1 && p.Capobranco == null)
-        {
-            lupi[0].Capobranco = true;
-            p.AggiungiLog($"{lupi[0].Nome} è l'unico Lupo: diventa capobranco.", TipoLog.Configurazione);
-        }
-
-        if (lupi.Count > 1 && p.Capobranco == null)
-        {
-            p.PassiNotte.Add(new PassoNotte
-            {
-                Tipo = TipoPasso.Capobranco,
-                Priorita = 0,
-                Titolo = "👑 Elezioni del capobranco",
-                Istruzione = "Il capobranco non c'è più: scegliete il nuovo capobranco tra i Lupi vivi.",
-                OpzioniIds = lupi.Select(l => l.Id).ToList()
-            });
-        }
+        // Se il capobranco è caduto (o è stato trasformato), il branco ne
+        // sceglie un altro a caso tra i Lupi ancora vivi.
+        if (p.Capobranco == null)
+            AssegnaCapobrancoCasuale(p);
 
         foreach (var info in Ruoli.Tutti.OrderBy(r => r.Priorita))
         {
@@ -435,6 +419,11 @@ public static class MotoreLupus
         p.Fase = FasePartita.Alba;
         p.AggiungiLog("Sorge il sole...", TipoLog.Notte);
 
+        // Se il capobranco è caduto o ha cambiato ruolo, il branco ne sceglie
+        // subito un altro a caso tra i Lupi vivi.
+        if (p.Capobranco == null)
+            AssegnaCapobrancoCasuale(p);
+
         ControllaVittoria(p);
         return EsitoPasso.Successo();
     }
@@ -497,6 +486,10 @@ public static class MotoreLupus
         g.Capobranco = false;
         p.UltimoRogoId = g.Id;
         p.AggiungiLog($"{g.Nome} è andato al rogo.", TipoLog.Voto);
+
+        // Se è caduto il capobranco, il branco ne sceglie subito un altro.
+        if (p.Capobranco == null)
+            AssegnaCapobrancoCasuale(p);
 
         if (g.Ruolo == Ruolo.Diavolo && g.DiavoloSbranato)
         {
@@ -564,6 +557,22 @@ public static class MotoreLupus
         g.Capobranco = true;
         p.AggiungiLog($"{g.Nome} è il capobranco.", TipoLog.Configurazione);
         return EsitoPasso.Successo();
+    }
+
+    /// <summary>
+    /// Sceglie a caso il capobranco tra i Lupi vivi. Viene usato all'avvio e
+    /// ogni volta che il capobranco precedente muore o cambia ruolo.
+    /// </summary>
+    public static void AssegnaCapobrancoCasuale(Partita p)
+    {
+        var lupi = p.LupiVivi.ToList();
+        if (lupi.Count == 0) return;
+
+        foreach (var g in p.Giocatori) g.Capobranco = false;
+
+        var scelto = lupi[Random.Shared.Next(lupi.Count)];
+        scelto.Capobranco = true;
+        p.AggiungiLog($"Capobranco: {scelto.Nome}.", TipoLog.Configurazione);
     }
 
     // ---------------------------------------------------------------------
@@ -950,12 +959,11 @@ public static class MotoreLupus
         if (azioni.Count == 0)
             return $"Nessuno ha puntato {bersaglio.Nome} stanotte.";
 
+        // La Spia scopre solo CHI ha puntato il bersaglio, non con quale
+        // potere: aggiungere il ruolo dell'attore le regalerebbe un'informazione
+        // che il suo potere non prevede.
         var righe = azioni
-            .Select(a =>
-            {
-                var autore = p.Giocatore(a.AttoreId);
-                return $"{autore?.Nome ?? "?"} ({EtichettaPotere(a.Potere)})";
-            })
+            .Select(a => p.Giocatore(a.AttoreId)?.Nome ?? "?")
             .Distinct()
             .ToList();
 
