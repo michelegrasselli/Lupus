@@ -442,6 +442,12 @@ static void RuoliMortiChiamati()
 
     Require(!G(p, "Veggente").Vivo, "La Veggente doveva morire la prima notte.");
 
+    // Il passo informativo del Becchino non deve avere il Potere predefinito
+    // (Lupo), altrimenti il suo risultato finisce nel quaderno del branco.
+    var passoBecchinoNotte1 = p.PassiNotte.First(x => x.AttoreId == G(p, "Becchino").Id);
+    Require(passoBecchinoNotte1.Potere == Potere.Becchino,
+        $"Il passo del Becchino ha Potere {passoBecchinoNotte1.Potere}, non Becchino.");
+
     // Giorno e rogo di Anna, così la seconda notte ha due morti.
     MotoreLupus.VaiAlGiorno(p);
     MotoreLupus.ApriVoto(p);
@@ -459,6 +465,8 @@ static void RuoliMortiChiamati()
         "Il passo della Veggente morta doveva essere già chiuso.");
     Require(passoVeggente.AttoreMorto,
         "Il passo della Veggente morta doveva essere marcato come segnaposto.");
+    Require(passoVeggente.Potere == Potere.Nessuno,
+        $"Il segnaposto del morto ha Potere {passoVeggente.Potere}, non Nessuno.");
     Require(passoVeggente.Risultato?.Contains("morto", StringComparison.OrdinalIgnoreCase) == true,
         "Il narratore deve vedere che il passo è saltato perché l'attore è morto.");
 

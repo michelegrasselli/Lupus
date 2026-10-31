@@ -583,7 +583,7 @@ public static class MotoreLupus
         if (opzioni.Count == 0)
         {
             p.PassiNotte.Add(PassoCompletato(
-                p, capo, 3, "🐺 Il branco dei lupi",
+                p, capo, Potere.Lupo, 3, "🐺 Il branco dei lupi",
                 "Nessun bersaglio valido: tutti i superstiti sono Lupi.", TipoLog.Info));
             return;
         }
@@ -614,7 +614,7 @@ public static class MotoreLupus
         if (opzioni.Count == 0)
         {
             p.PassiNotte.Add(PassoCompletato(
-                p, attore, priorita, titolo,
+                p, attore, potere, priorita, titolo,
                 "Nessun bersaglio valido per questa notte.", TipoLog.Info));
             return;
         }
@@ -646,7 +646,7 @@ public static class MotoreLupus
         if (opzioni.Count == 0)
         {
             p.PassiNotte.Add(PassoCompletato(
-                p, attore, 6, titolo,
+                p, attore, Potere.Becchino, 6, titolo,
                 "Non ci sono ancora morti di cui puoi sapere...", TipoLog.Info));
             return;
         }
@@ -678,7 +678,7 @@ public static class MotoreLupus
         {
             attore.TrappolaInCooldown = false;
             p.PassiNotte.Add(PassoCompletato(
-                p, attore, 2, titolo,
+                p, attore, Potere.Cacciatore, 2, titolo,
                 "Hai già piazzato una trappola la scorsa notte: stanotte riposi.", TipoLog.Info));
             return;
         }
@@ -700,7 +700,7 @@ public static class MotoreLupus
         if (opzioni.Count == 0)
         {
             p.PassiNotte.Add(PassoCompletato(
-                p, attore, priorita, titolo,
+                p, attore, potere, priorita, titolo,
                 "Nessun giocatore valido da copiare.", TipoLog.Info));
             return;
         }
@@ -737,7 +737,7 @@ public static class MotoreLupus
             if (IsBloccato(p, imp, Potere.ImputatoLupo))
             {
                 nuovi.Add(PassoCompletato(
-                    p, imp, 10, $"⚖️ Imputato · {imp.Nome}",
+                    p, imp, Potere.Nessuno, 10, $"⚖️ Imputato · {imp.Nome}",
                     $"{imp.Nome} è stato annullato: nessun potere copiato.", TipoLog.Potere));
                 continue;
             }
@@ -746,7 +746,7 @@ public static class MotoreLupus
             if (poteri.Count == 0)
             {
                 nuovi.Add(PassoCompletato(
-                    p, imp, 10, $"⚖️ Imputato · {imp.Nome}",
+                    p, imp, Potere.Nessuno, 10, $"⚖️ Imputato · {imp.Nome}",
                     $"{imp.Nome} non ha poteri da usare stanotte.", TipoLog.Info));
                 continue;
             }
@@ -757,7 +757,7 @@ public static class MotoreLupus
                 if (opzioni.Count == 0)
                 {
                     nuovi.Add(PassoCompletato(
-                        p, imp, 10, $"⚖️ Imputato · {imp.Nome}",
+                        p, imp, potere, 10, $"⚖️ Imputato · {imp.Nome}",
                         $"Nessun bersaglio valido per {EtichettaPotere(potere)}.", TipoLog.Info));
                     continue;
                 }
@@ -793,7 +793,7 @@ public static class MotoreLupus
     {
         var titolo = $"{Ruoli.Info(attore.Ruolo).Icona} {Ruoli.Nome(attore.Ruolo)} · {attore.Nome}";
         var passo = PassoCompletato(
-            p, attore, priorita, titolo,
+            p, attore, Potere.Nessuno, priorita, titolo,
             $"{attore.Nome} è morto: stanotte non agisce.", TipoLog.Info);
 
         passo.AttoreMorto = true;
@@ -801,13 +801,15 @@ public static class MotoreLupus
     }
 
     private static PassoNotte PassoCompletato(
-        Partita p, Giocatore attore, int priorita, string titolo, string risultato, TipoLog tipo)
+        Partita p, Giocatore attore, Potere potere, int priorita,
+        string titolo, string risultato, TipoLog tipo)
     {
         p.AggiungiLog(risultato, tipo);
 
         return new PassoNotte
         {
             Tipo = TipoPasso.Azione,
+            Potere = potere,
             AttoreId = attore.Id,
             Priorita = priorita,
             Titolo = titolo,

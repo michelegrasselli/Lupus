@@ -61,7 +61,13 @@ public enum Potere
     ImputatoCacciatore,
     ImputatoGufo,
     Copione,
-    Copione2
+    Copione2,
+
+    /// <summary>
+    /// Passo senza un potere reale (informativo o segnaposto di un morto).
+    /// Non deve mai essere trattato come un passo del branco.
+    /// </summary>
+    Nessuno
 }
 
 public sealed class AzioneNotte

@@ -356,6 +356,11 @@ public static class StatoGiocatoreFactory
 
     public static bool Autorizzato(Giocatore giocatore, PassoNotte passo)
     {
+        // I segnaposto dei morti non sono mai azioni: senza questo controllo
+        // il Potere predefinito (Lupo) li renderebbe visibili al branco.
+        if (passo.AttoreMorto)
+            return false;
+
         if (passo.Tipo == TipoPasso.Capobranco)
             return giocatore.Ruolo == Ruolo.Lupo;
 
@@ -368,6 +373,7 @@ public static class StatoGiocatoreFactory
     public static string IconaPasso(PassoNotte passo)
     {
         if (passo.Tipo == TipoPasso.Capobranco) return "👑";
+        if (passo.AttoreMorto) return "💀";
 
         return passo.Potere switch
         {

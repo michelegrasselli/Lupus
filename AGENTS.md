@@ -232,7 +232,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 
 - `Partita.PassoCorrente` è il primo passo non completato.
 - `Partita.NotteCompleta` è `PassiNotte.All(p => p.Completato)`.
-- I passi informativi già completati hanno `Saltato = true` e `Risultato` valorizzato.
+- I passi informativi già completati hanno `Saltato = true` e `Risultato` valorizzato. Il loro `Potere` deve essere quello reale del ruolo o `Potere.Nessuno`, mai il valore predefinito `Lupo`: altrimenti `RegistraRisultati` li copierebbe nel quaderno del branco.
 - I passi segnaposto degli attori morti hanno `AttoreMorto = true`, `Completato = true` e `Saltato = true`; restano nel diario del narratore ma non vengono copiati nei quaderni dei giocatori.
 - I passi che richiedono conferma hanno `RichiedeConferma = true`; dopo `EseguiPasso` hanno `Risultato` ma `Completato = false`.
 - `Partita.UltimoRogoId` viene impostato da `EseguiRogo` e serve alla schermata di fine giornata. `PreparaNuovaNotte` lo azzera.

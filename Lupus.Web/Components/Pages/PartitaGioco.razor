@@ -1170,6 +1170,7 @@ else
     private static string IconaPasso(PassoNotte passo)
     {
         if (passo.Tipo == TipoPasso.Capobranco) return "👑";
+        if (passo.AttoreMorto) return "💀";
 
         return passo.Potere switch
         {
@@ -1191,6 +1192,7 @@ else
     {
         if (P == null) return "?";
         if (passo.Tipo == TipoPasso.Capobranco) return "tutti i lupi";
+        if (passo.AttoreMorto) return P.NomeDi(passo.AttoreId);
         if (passo.Potere == Potere.Lupo) return "il branco";
         return P.NomeDi(passo.AttoreId);
     }
@@ -1200,6 +1202,7 @@ else
     {
         if (P == null) return "Tocca a ?";
         if (passo.Tipo == TipoPasso.Capobranco) return "Toccano a tutti i lupi";
+        if (passo.AttoreMorto) return $"Tocca a {P.NomeDi(passo.AttoreId)} (morto)";
         if (passo.Potere == Potere.Lupo) return "Tocca al branco";
         return $"Tocca a {P.NomeDi(passo.AttoreId)}";
     }
@@ -1208,6 +1211,9 @@ else
     {
         if (passo.Tipo == TipoPasso.Capobranco)
             return "Elezioni del capobranco: decidono tutti i lupi.";
+
+        if (passo.AttoreMorto)
+            return $"Azione di {AttoreBreve(passo)} (morto): passo saltato.";
 
         if (passo.Potere == Potere.Lupo)
             return "Azione del branco.";
