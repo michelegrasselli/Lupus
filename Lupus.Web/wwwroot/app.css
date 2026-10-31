@@ -3171,39 +3171,6 @@ h1:focus {
     line-height: 1.5;
 }
 
-.player-notebook {
-    margin-top: 14px;
-}
-
-.notebook-turn {
-    margin-top: 12px;
-}
-
-.notebook-turn-label {
-    display: inline-block;
-    margin-bottom: 6px;
-    color: var(--muted-2);
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-}
-
-.notebook-entry {
-    padding: 9px 0;
-    border-top: 1px solid var(--border);
-}
-
-.notebook-entry strong {
-    font-size: 0.86rem;
-}
-
-.notebook-entry p {
-    margin-top: 3px;
-    color: var(--muted);
-    font-size: 0.82rem;
-    line-height: 1.5;
-}
-
 .target-picker .player-option {
     padding: 12px;
 }

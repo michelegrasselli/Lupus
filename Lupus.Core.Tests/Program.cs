@@ -443,7 +443,7 @@ static void RuoliMortiChiamati()
     Require(!G(p, "Veggente").Vivo, "La Veggente doveva morire la prima notte.");
 
     // Il passo informativo del Becchino non deve avere il Potere predefinito
-    // (Lupo), altrimenti il suo risultato finisce nel quaderno del branco.
+    // (Lupo), altrimenti il risultato viene attribuito al branco.
     var passoBecchinoNotte1 = p.PassiNotte.First(x => x.AttoreId == G(p, "Becchino").Id);
     Require(passoBecchinoNotte1.Potere == Potere.Becchino,
         $"Il passo del Becchino ha Potere {passoBecchinoNotte1.Potere}, non Becchino.");

@@ -611,33 +611,6 @@ else
                     <p class="muted small">Il narratore sta per calare la notte.</p>
                 </div>
             }
-
-            @if (stato.Risultati.Count > 0)
-            {
-                <div class="card player-notebook">
-                    <div class="card-head compact">
-                        <div>
-                            <h2>Il tuo quaderno</h2>
-                            <p class="muted small">Le informazioni che hai scoperto restano qui.</p>
-                        </div>
-                        <span class="pill">@stato.Risultati.Count</span>
-                    </div>
-
-                    @foreach (var gruppo in stato.Risultati.GroupBy(r => r.Turno).OrderByDescending(g => g.Key))
-                    {
-                        <div class="notebook-turn">
-                            <span class="notebook-turn-label">Turno @gruppo.Key</span>
-                            @foreach (var risultato in gruppo)
-                            {
-                                <div class="notebook-entry">
-                                    <strong>@risultato.Titolo</strong>
-                                    <p>@risultato.Testo</p>
-                                </div>
-                            }
-                        </div>
-                    }
-                </div>
-            }
         }
     </div>
 }

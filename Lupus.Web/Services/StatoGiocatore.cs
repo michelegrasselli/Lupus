@@ -33,7 +33,6 @@ public sealed class StatoGiocatore
     public IReadOnlyList<string> CompagniBranco { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<AzioneGiocatore> Azioni { get; init; } = Array.Empty<AzioneGiocatore>();
-    public IReadOnlyList<EsitoPrivato> Risultati { get; init; } = Array.Empty<EsitoPrivato>();
     public IReadOnlyList<string> EventiAlba { get; init; } = Array.Empty<string>();
 
     public StatoVoto? Voto { get; init; }
@@ -74,8 +73,6 @@ public sealed record AzioneGiocatore(
     string? Risultato,
     IReadOnlyList<GiocatorePubblico> Opzioni,
     bool PuoAgire);
-
-public sealed record EsitoPrivato(int Turno, string Titolo, string Testo);
 
 public sealed record ConteggioVoto(string Id, string Nome, int Voti, IReadOnlyList<string> Elettori);
 
@@ -206,13 +203,6 @@ public static class StatoGiocatoreFactory
             }
         }
 
-        var risultati = avviata
-            ? stanza.RisultatiDi(giocatore.Id)
-                .OrderByDescending(r => r.Turno)
-                .ThenBy(r => r.Titolo)
-                .ToList()
-            : new List<EsitoPrivato>();
-
         var eventiAlba = p.RisultatoNotte == null
             ? new List<string>()
             : p.RisultatoNotte.Eventi
@@ -281,7 +271,6 @@ public static class StatoGiocatoreFactory
             CandidatiGufo = candidatiGufo,
             CompagniBranco = compagni,
             Azioni = azioni,
-            Risultati = risultati,
             EventiAlba = eventiAlba,
             Voto = voto,
             Ballottaggio = ballottaggio,

@@ -87,9 +87,9 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 ### Cosa vede ogni telefono
 
 - Il **proprio ruolo**, la fazione e i compagni di branco (solo per i lupi).
-- Solo le **proprie azioni notturne** e i relativi risultati.
-- Il **quaderno privato** con le indagini di Veggente, Becchino, Spia, ecc. (persistente
-  tra le notti).
+- Solo le **proprie azioni notturne** e i relativi risultati, mostrati nella card del passo
+  mentre accade. Non c'è nessun quaderno: ricordare le informazioni raccolte è compito del
+  giocatore.
 - Lo **stato pubblico**: vivi, morti, eventi dell'alba, candidati al ballottaggio.
 - Mai i ruoli degli altri giocatori vivi.
 

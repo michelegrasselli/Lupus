@@ -103,12 +103,6 @@ public sealed class Stanza
     public bool RivelaRuoliMorti { get; set; }
     public bool RivelaRuoloRogo { get; set; }
 
-    // --- Quaderno privato dei giocatori -----------------------------------
-    // Le indagini di Veggente, Becchino, Spia, ecc. restano qui anche dopo
-    // che PreparaNuovaNotte() svuota i passi della notte.
-    public Dictionary<string, List<EsitoPrivato>> RisultatiPrivati { get; } = new();
-    private readonly HashSet<string> _passiRegistrati = new();
-
     public Posto? PostoDi(string giocatoreId) =>
         Posti.FirstOrDefault(p => p.GiocatoreId == giocatoreId);
 
@@ -151,69 +145,6 @@ public sealed class Stanza
             EsitoBallottaggio = null;
             BallottaggioPareggio = false;
             CandidatiPareggioBallottaggio.Clear();
-        }
-    }
-
-    /// <summary>
-    /// Copia nei quaderni privati i risultati dei passi appena completati.
-    /// Per i passi del branco il risultato va a tutti i lupi vivi; per gli
-    /// altri poteri solo all'attore. Chiamare dopo ogni passo o conferma.
-    /// </summary>
-    public void RegistraRisultati()
-    {
-        lock (Sync)
-        {
-            foreach (var passo in Partita.PassiNotte)
-            {
-                if (!passo.Completato || string.IsNullOrWhiteSpace(passo.Risultato))
-                    continue;
-
-                // I segnaposto dei morti restano nel diario del narratore,
-                // non nel quaderno del giocatore.
-                if (passo.AttoreMorto)
-                    continue;
-
-                IEnumerable<string> destinatari;
-
-                if (passo.Tipo == TipoPasso.Capobranco || passo.Potere == Potere.Lupo)
-                {
-                    destinatari = Partita.Vivi
-                        .Where(g => g.Ruolo == Ruolo.Lupo)
-                        .Select(g => g.Id);
-                }
-                else if (passo.AttoreId != null)
-                {
-                    destinatari = new[] { passo.AttoreId };
-                }
-                else
-                {
-                    continue;
-                }
-
-                foreach (var id in destinatari.Distinct())
-                {
-                    var chiave = $"{passo.Id}|{id}";
-                    if (!_passiRegistrati.Add(chiave)) continue;
-
-                    if (!RisultatiPrivati.TryGetValue(id, out var lista))
-                    {
-                        lista = new List<EsitoPrivato>();
-                        RisultatiPrivati[id] = lista;
-                    }
-
-                    lista.Add(new EsitoPrivato(Partita.Turno, passo.Titolo, passo.Risultato));
-                }
-            }
-        }
-    }
-
-    public IReadOnlyList<EsitoPrivato> RisultatiDi(string giocatoreId)
-    {
-        lock (Sync)
-        {
-            return RisultatiPrivati.TryGetValue(giocatoreId, out var lista)
-                ? lista.ToList()
-                : Array.Empty<EsitoPrivato>();
         }
     }
 }

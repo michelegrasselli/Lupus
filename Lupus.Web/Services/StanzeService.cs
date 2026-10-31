@@ -260,7 +260,6 @@ public sealed class StanzeService
             stanza.AzzeraVoti();
             stanza.RivelaRuoliMorti = false;
             stanza.RivelaRuoloRogo = false;
-            stanza.RegistraRisultati();
             stanza.UltimoAggiornamento = DateTime.Now;
         }
 
@@ -280,7 +279,6 @@ public sealed class StanzeService
             esito = MotoreLupus.RisolviNotte(stanza.Partita);
             if (esito.Ok)
             {
-                stanza.RegistraRisultati();
                 stanza.RivelaRuoliMorti = false;
                 stanza.RivelaRuoloRogo = false;
                 stanza.UltimoAggiornamento = DateTime.Now;
@@ -386,7 +384,6 @@ public sealed class StanzeService
             esito = MotoreLupus.EseguiPasso(p, passoId, bersaglioId);
             if (esito.Ok)
             {
-                stanza.RegistraRisultati();
                 stanza.UltimoAggiornamento = DateTime.Now;
             }
         }
@@ -423,7 +420,6 @@ public sealed class StanzeService
                 return EsitoPasso.Fallito("Non è ancora il tuo turno.");
 
             MotoreLupus.ConfermaRisultato(p, passoId);
-            stanza.RegistraRisultati();
             stanza.UltimoAggiornamento = DateTime.Now;
         }
 
@@ -453,7 +449,6 @@ public sealed class StanzeService
             esito = MotoreLupus.EseguiPasso(p, passoId, bersaglioId);
             if (esito.Ok)
             {
-                stanza.RegistraRisultati();
                 stanza.UltimoAggiornamento = DateTime.Now;
             }
         }
@@ -479,7 +474,6 @@ public sealed class StanzeService
                 return EsitoPasso.Fallito("Non è il passo corrente: aggiorna la pagina.");
 
             MotoreLupus.ConfermaRisultato(p, passoId);
-            stanza.RegistraRisultati();
             stanza.UltimoAggiornamento = DateTime.Now;
         }
 

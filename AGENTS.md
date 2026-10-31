@@ -13,7 +13,7 @@ Stato attuale:
 - **Multiplayer**: stanza con codice a 5 lettere, posti reclamabili, token per dispositivo.
 - **Narratore regista**: crea la stanza, avvia la partita, vede tutto, può sostituirsi a un
   giocatore e decide quando rivelare i ruoli dei morti.
-- **Giocatori dal telefono**: ruolo privato, azioni notturne, quaderno delle indagini, voto
+- **Giocatori dal telefono**: ruolo privato, azioni notturne, voto
   del rogo e ballottaggio con conteggio in tempo reale.
 - **Nessun account, nessun database**: le stanze vivono in memoria sul server; la partita è
   esportabile/importabile come JSON.
@@ -102,7 +102,7 @@ Lupus.slnx
 | `Components/App.razor` | HTML base italiano, `prerender: false`, CSS, script `lupus.js`. |
 | `Components/Pages/Home.razor` | Crea una stanza (preset, ruoli, nomi), entra con codice, riprende le sessioni, importa un JSON. |
 | `Components/Pages/Entra.razor` | `/entra` e `/entra/{Codice}`: inserimento codice, elenco posti, reclamo del posto, rientro, "Dimentica". |
-| `Components/Pages/Gioca.razor` | `/gioca/{Codice}?t=...`: lobby, ruolo privato, azioni notturne, alba, discussione, voto, ballottaggio, esecuzione, finale, quaderno. |
+| `Components/Pages/Gioca.razor` | `/gioca/{Codice}?t=...`: lobby, ruolo privato, azioni notturne, alba, discussione, voto, ballottaggio, esecuzione, finale. |
 | `Components/Pages/PartitaGioco.razor` | `/partita/{Codice}?h=...`: dashboard narratore, lobby e link, passi notte, alba, voto live, ballottaggio, rogo, finale, diario, timer, rivelazioni, chiusura stanza. |
 | `Components/Shared/PlayerPicker.razor` | Griglia di selezione con ruoli/fazioni: **solo per il narratore**. |
 | `Components/Shared/PlayerTargetPicker.razor` | Griglia di selezione senza ruoli né colori di fazione: **per i giocatori**. |
@@ -235,8 +235,8 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 
 - `Partita.PassoCorrente` è il primo passo non completato.
 - `Partita.NotteCompleta` è `PassiNotte.All(p => p.Completato)`.
-- I passi informativi già completati hanno `Saltato = true` e `Risultato` valorizzato. Il loro `Potere` deve essere quello reale del ruolo o `Potere.Nessuno`, mai il valore predefinito `Lupo`: altrimenti `RegistraRisultati` li copierebbe nel quaderno del branco.
-- I passi segnaposto degli attori morti hanno `AttoreMorto = true`, `Completato = true` e `Saltato = true`; restano nel diario del narratore ma non vengono copiati nei quaderni dei giocatori.
+- I passi informativi già completati hanno `Saltato = true` e `Risultato` valorizzato. Il loro `Potere` deve essere quello reale del ruolo o `Potere.Nessuno`, mai il valore predefinito `Lupo`: altrimenti il diario del narratore li attribuisce al branco.
+- I passi segnaposto degli attori morti hanno `AttoreMorto = true`, `Completato = true` e `Saltato = true`; restano nel diario del narratore ma non vengono mostrati ai giocatori.
 - I passi che richiedono conferma hanno `RichiedeConferma = true`; dopo `EseguiPasso` hanno `Risultato` ma `Completato = false`.
 - `Partita.UltimoRogoId` viene impostato da `EseguiRogo` e serve alla schermata di fine giornata. `PreparaNuovaNotte` lo azzera.
 - `Partita.BallottaggioIds` contiene i candidati del Gufo durante l'alba/giorno/voto; durante il ballottaggio contiene i candidati finali (votato + gufati).
@@ -294,7 +294,9 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 - **Voto/Ballottaggio**: picker, voto segreto, avanzamento, esito e tally a chiusura.
 - **Esecuzione**: condannato e ruolo se rivelato.
 - **Finita**: vincitore, eventi, ruoli di tutti.
-- **Quaderno**: risultati privati raggruppati per turno.
+- **Quaderno**: non esiste. I risultati dei propri passi si vedono nella card dell'azione
+  mentre accade; ricordare le informazioni raccolte è compito del giocatore. Il diario
+  completo resta solo al narratore.
 
 ### Dettagli tecnici importanti
 
@@ -410,7 +412,7 @@ Poi nel browser (narratore + almeno due schede giocatore):
 - Apri il link in due schede → reclama due posti → i telefoni sono in lobby senza ruolo.
 - "Avvia la partita" → ogni telefono vede il proprio ruolo.
 - "Inizia la notte" → il giocatore di turno agisce → il passo avanza per tutti.
-- Conferma un risultato informativo (Veggente) → il quaderno si popola.
+- Conferma un risultato informativo (Veggente) → il risultato compare nella card del telefono e poi sparisce: nessun quaderno.
 - "Risolvi la notte" → alba → "Vai alla discussione" → "Apri il voto".
 - Vota da due telefoni → il narratore vede il tally → "Chiudi il voto".
 - Pareggio → scegli il candidato → rogo; oppure ballottaggio del Gufo.
