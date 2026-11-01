@@ -466,42 +466,30 @@ else
                                        Vivi="@p.TotaleVivi" />
                         </div>
 
-                        @if (stanza.VotoPareggio)
-                        {
-                            <div class="tie-panel">
-                                <strong>Pareggio: scegli chi va al rogo</strong>
-                                <div class="tie-actions">
-                                    @foreach (var id in stanza.CandidatiPareggio)
-                                    {
-                                        <button type="button" class="btn btn-primary btn-sm" @onclick="() => ChiudiVoto(id)">
-                                            @p.NomeDi(id)
-                                        </button>
-                                    }
-                                </div>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="host-vote-actions">
-                                <button type="button" class="btn btn-primary" @onclick="() => ChiudiVoto(null)">
-                                    Chiudi il voto
-                                </button>
-                            </div>
+                        <div class="host-vote-actions">
+                            <button type="button" class="btn btn-primary" @onclick="() => ChiudiVoto(null)">
+                                Chiudi il voto
+                            </button>
+                        </div>
 
-                            <div class="force-vote">
-                                <p class="muted small">
-                                    Se un telefono non riesce a votare, puoi forzare il rogo.
-                                    Scegli un giocatore vivo e conferma.
-                                </p>
-                                <PlayerPicker Giocatori="GiocatoriVivi"
-                                              SelezionatoId="@selezionatoId"
-                                              OnSeleziona="Seleziona"
-                                              MostraRuoli="mostraRuoli" />
+                        <div class="force-vote">
+                            <p class="muted small">
+                                Se un telefono non riesce a votare, puoi forzare il rogo.
+                                Scegli un giocatore vivo e conferma.
+                            </p>
+                            <PlayerPicker Giocatori="GiocatoriVivi"
+                                          SelezionatoId="@selezionatoId"
+                                          OnSeleziona="Seleziona"
+                                          MostraRuoli="mostraRuoli" />
+                            <div class="tie-actions">
                                 <button type="button" class="btn btn-ghost" @onclick="() => ChiudiVoto(selezionatoId)" disabled="@(selezionatoId == null)">
                                     Forza il rogo
                                 </button>
+                                <button type="button" class="btn btn-ghost" @onclick="SaltaRogo">
+                                    Salta il rogo
+                                </button>
                             </div>
-                        }
+                        </div>
                     </div>
                 }
                 else if (p.Fase == FasePartita.Ballottaggio)
@@ -511,8 +499,12 @@ else
                             <div class="stage-icon">⚖️</div>
                             <div>
                                 <p class="eyebrow">Turno @p.Turno</p>
-                                <h2>Ballottaggio</h2>
-                                <p class="muted">I telefoni scelgono tra i candidati. Chiudi quando siete pronti.</p>
+                                <h2>@(stanza.BallottaggioDaPareggio ? "Secondo voto" : "Ballottaggio")</h2>
+                                <p class="muted">
+                                    @(stanza.BallottaggioDaPareggio
+                                        ? "Pareggio al rogo: si vota di nuovo solo tra i più votati. Se resta il pareggio, nessuno va al rogo."
+                                        : "I telefoni scelgono tra i candidati. Chiudi quando siete pronti.")
+                                </p>
                             </div>
                         </div>
 
@@ -539,39 +531,27 @@ else
                                        Vivi="@p.TotaleVivi" />
                         </div>
 
-                        @if (stanza.BallottaggioPareggio)
-                        {
-                            <div class="tie-panel">
-                                <strong>Pareggio: scegli chi va al rogo</strong>
-                                <div class="tie-actions">
-                                    @foreach (var id in stanza.CandidatiPareggioBallottaggio)
-                                    {
-                                        <button type="button" class="btn btn-primary btn-sm" @onclick="() => ChiudiBallottaggio(id)">
-                                            @p.NomeDi(id)
-                                        </button>
-                                    }
-                                </div>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="host-vote-actions">
-                                <button type="button" class="btn btn-primary" @onclick="() => ChiudiBallottaggio(null)">
-                                    Chiudi il ballottaggio
-                                </button>
-                            </div>
+                        <div class="host-vote-actions">
+                            <button type="button" class="btn btn-primary" @onclick="() => ChiudiBallottaggio(null)">
+                                Chiudi il ballottaggio
+                            </button>
+                        </div>
 
-                            <div class="force-vote">
-                                <p class="muted small">Forza la scelta tra i candidati, se serve.</p>
-                                <PlayerPicker Giocatori="GiocatoriBallottaggio"
-                                              SelezionatoId="@selezionatoId"
-                                              OnSeleziona="Seleziona"
-                                              MostraRuoli="mostraRuoli" />
+                        <div class="force-vote">
+                            <p class="muted small">Forza la scelta tra i candidati, se serve.</p>
+                            <PlayerPicker Giocatori="GiocatoriBallottaggio"
+                                          SelezionatoId="@selezionatoId"
+                                          OnSeleziona="Seleziona"
+                                          MostraRuoli="mostraRuoli" />
+                            <div class="tie-actions">
                                 <button type="button" class="btn btn-ghost" @onclick="() => ChiudiBallottaggio(selezionatoId)" disabled="@(selezionatoId == null)">
                                     Forza il rogo
                                 </button>
+                                <button type="button" class="btn btn-ghost" @onclick="SaltaRogo">
+                                    Salta il rogo
+                                </button>
                             </div>
-                        }
+                        </div>
                     </div>
                 }
                 else if (p.Fase == FasePartita.Esecuzione)
@@ -581,8 +561,12 @@ else
                             <div class="stage-icon">🔥</div>
                             <div>
                                 <p class="eyebrow">Turno @p.Turno</p>
-                                <h2>Il rogo è concluso</h2>
-                                <p class="muted">Annuncia il ruolo del condannato, poi prepara la prossima notte.</p>
+                                <h2>@(UltimoRogo != null ? "Il rogo è concluso" : "Nessuno va al rogo")</h2>
+                                <p class="muted">
+                                    @(UltimoRogo != null
+                                        ? "Annuncia il ruolo del condannato, poi prepara la prossima notte."
+                                        : "Nessuno è stato condannato: annuncia la notte e prosegui.")
+                                </p>
                             </div>
                         </div>
 
@@ -602,15 +586,18 @@ else
                         }
                         else
                         {
-                            <p class="muted">Nessun condannato registrato per questo turno.</p>
+                            <p class="muted">Nessuno è stato mandato al rogo: il villaggio si prepara a una nuova notte.</p>
                         }
 
-                        <label class="toggle">
-                            <input type="checkbox"
-                                   checked="@stanza.RivelaRuoloRogo"
-                                   @onchange="OnRivelaRuoloRogoChanged" />
-                            <span>Rivela ai telefoni il ruolo del condannato</span>
-                        </label>
+                        @if (UltimoRogo != null)
+                        {
+                            <label class="toggle">
+                                <input type="checkbox"
+                                       checked="@stanza.RivelaRuoloRogo"
+                                       @onchange="OnRivelaRuoloRogoChanged" />
+                                <span>Rivela ai telefoni il ruolo del condannato</span>
+                            </label>
+                        }
 
                         <div class="alive-strip">
                             @foreach (var g in GiocatoriVivi)
@@ -1396,6 +1383,31 @@ else
             else
             {
                 avviso = risultato.Messaggio;
+                selezionatoId = null;
+            }
+        }
+        finally
+        {
+            AggiornaVista();
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaltaRogo()
+    {
+        if (stanza == null) return;
+
+        errore = null;
+        try
+        {
+            var risultato = await Stanze.SaltaRogoAsync(stanza, hostToken!);
+            if (!risultato.Ok)
+            {
+                errore = risultato.Errore;
+            }
+            else
+            {
+                avviso = "Nessuno va al rogo: puoi calare la notte.";
                 selezionatoId = null;
             }
         }

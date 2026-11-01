@@ -442,14 +442,6 @@ else
                             </div>
                         }
 
-                        @if (voto.Pareggio)
-                        {
-                            <div class="info-banner">
-                                Pareggio: il narratore sta scegliendo tra
-                                <strong>@Nomi(voto.CandidatiPareggio)</strong>.
-                            </div>
-                        }
-
                         <VoteTally Conteggi="voto.Conteggi"
                                    NonVotanti="voto.NonVotanti"
                                    Votanti="@voto.Votanti"
@@ -476,9 +468,17 @@ else
                         <div class="stage-icon">⚖️</div>
                         <div>
                             <p class="eyebrow">Turno @stato.Turno</p>
-                            <h2>Ballottaggio</h2>
+                            <h2>@(stato.SecondoVoto ? "Secondo voto" : "Ballottaggio")</h2>
                             <p class="muted">
-                                @if (ballottaggio.PuoVotare)
+                                @if (stato.SecondoVoto && ballottaggio.PuoVotare)
+                                {
+                                    <text>Pareggio al rogo: scegli tra i più votati. Se resta il pareggio, nessuno va al rogo.</text>
+                                }
+                                else if (stato.SecondoVoto)
+                                {
+                                    <text>Pareggio al rogo: si vota di nuovo solo tra i più votati.</text>
+                                }
+                                else if (ballottaggio.PuoVotare)
                                 {
                                     <text>Scegli tra i candidati. Non puoi votare per te stesso.</text>
                                 }
@@ -538,14 +538,6 @@ else
                             </div>
                         }
 
-                        @if (ballottaggio.Pareggio)
-                        {
-                            <div class="info-banner">
-                                Pareggio: il narratore sta scegliendo tra
-                                <strong>@Nomi(ballottaggio.CandidatiPareggio)</strong>.
-                            </div>
-                        }
-
                         <VoteTally Conteggi="ballottaggio.Conteggi"
                                    NonVotanti="ballottaggio.NonVotanti"
                                    Votanti="@ballottaggio.Votanti"
@@ -570,8 +562,12 @@ else
                         <div class="stage-icon">🔥</div>
                         <div>
                             <p class="eyebrow">Turno @stato.Turno</p>
-                            <h2>Il rogo è concluso</h2>
-                            <p class="muted">Il villaggio ha scelto. Il narratore annuncia il ruolo.</p>
+                            <h2>@(stato.UltimoRogo != null ? "Il rogo è concluso" : "Nessuno va al rogo")</h2>
+                            <p class="muted">
+                                @(stato.UltimoRogo != null
+                                    ? "Il villaggio ha scelto. Il narratore annuncia il ruolo."
+                                    : "Il villaggio non ha trovato un condannato: si prepara una nuova notte.")
+                            </p>
                         </div>
                     </div>
 
@@ -605,7 +601,7 @@ else
                     }
                     else
                     {
-                        <p class="muted">Nessun condannato registrato per questo turno.</p>
+                        <p class="muted">Nessuno è stato mandato al rogo: il villaggio si prepara a una nuova notte.</p>
                     }
 
                     <p class="muted small">Il narratore sta per calare la notte.</p>

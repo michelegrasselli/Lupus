@@ -91,13 +91,15 @@ public sealed class Stanza
 
     public bool VotoChiuso { get; set; }
     public string? EsitoVoto { get; set; }
-    public bool VotoPareggio { get; set; }
-    public List<string> CandidatiPareggio { get; } = new();
 
     public bool BallottaggioChiuso { get; set; }
     public string? EsitoBallottaggio { get; set; }
-    public bool BallottaggioPareggio { get; set; }
-    public List<string> CandidatiPareggioBallottaggio { get; } = new();
+
+    /// <summary>
+    /// Il ballottaggio nasce da un pareggio al rogo: è la seconda votazione
+    /// tra i più votati (e gli eventuali segnalati dal Gufo).
+    /// </summary>
+    public bool BallottaggioDaPareggio { get; set; }
 
     // --- Cosa il narratore ha scelto di rivelare ai telefoni --------------
     public bool RivelaRuoliMorti { get; set; }
@@ -126,13 +128,10 @@ public sealed class Stanza
 
             VotoChiuso = false;
             EsitoVoto = null;
-            VotoPareggio = false;
-            CandidatiPareggio.Clear();
 
             BallottaggioChiuso = false;
             EsitoBallottaggio = null;
-            BallottaggioPareggio = false;
-            CandidatiPareggioBallottaggio.Clear();
+            BallottaggioDaPareggio = false;
         }
     }
 
@@ -143,8 +142,7 @@ public sealed class Stanza
             _votiBallottaggio.Clear();
             BallottaggioChiuso = false;
             EsitoBallottaggio = null;
-            BallottaggioPareggio = false;
-            CandidatiPareggioBallottaggio.Clear();
+            BallottaggioDaPareggio = false;
         }
     }
 }

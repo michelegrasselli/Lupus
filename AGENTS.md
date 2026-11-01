@@ -147,7 +147,10 @@ Lupus.slnx
    sempre eseguirli al posto loro (`EseguiPassoNarratoreAsync`).
 6. `RisolviNotteAsync` → alba; `VaiAlGiornoAsync` → giorno; `ApriVotoAsync` → voto.
 7. I telefoni votano (`RegistraVotoAsync`), il narratore chiude (`ChiudiVotoAsync`).
-8. Se il Gufo ha aggiunto candidati si passa al ballottaggio (`ChiudiBallottaggioAsync`).
+8. In caso di pareggio al rogo si apre il **secondo voto** tra i più votati
+   (`ApriBallottaggio`); se anche quello è in parità nessuno va al rogo (`SaltaRogo`).
+   Se il Gufo ha aggiunto candidati si passa al ballottaggio (`ChiudiBallottaggioAsync`).
+   Il narratore può sempre forzare o saltare il rogo dal pannello.
 9. `ProssimaNotteAsync` torna a `NotteIntro` con il turno successivo.
 10. `AbbandonaAsync` rimuove la stanza e notifica i telefoni, che mostrano "stanza chiusa".
 
@@ -193,10 +196,14 @@ esistente, autorizzazione, e `Partita.PassoCorrente?.Id == passoId`.
 - `Stanza._voti` è `votanteId → bersaglioId`; un giocatore vota una sola volta.
 - Il voto è segreto finché il narratore non chiude: `StatoVoto.Conteggi` è vuoto durante il
   voto aperto, tranne per il narratore che vede il tally live.
-- `ChiudiVotoAsync` calcola i gruppi; se il massimo è condiviso imposta `VotoPareggio`,
-  `CandidatiPareggio` e restituisce `RisultatoChiusura.Pareggio = true`.
-- Il narratore risolve con `sceltaManuale`; solo dopo si chiama `MotoreLupus.Vota`.
-- Il ballottaggio segue lo stesso schema con `_votiBallottaggio`.
+- `ChiudiVotoAsync` calcola i gruppi. Se il massimo è condiviso chiama
+  `MotoreLupus.ApriBallottaggio` con i più votati (più gli eventuali gufati vivi): il
+  **secondo voto** avviene solo tra loro. Se anche questo finisce in parità si chiama
+  `MotoreLupus.SaltaRogo` e **nessuno va al rogo** per quel turno.
+- Il ballottaggio del Gufo segue lo stesso schema con `_votiBallottaggio`; `Stanza.BallottaggioDaPareggio`
+  distingue il secondo voto dal ballottaggio del Gufo nella UI.
+- `sceltaManuale` resta come override del narratore ("Forza il rogo"); `SaltaRogoAsync`
+  permette di saltare il rogo sia dalla fase `Voto` sia dal `Ballottaggio`.
 - `ApplicaVoto`/`ApplicaBallottaggio` aggiornano gli esiti mostrati ai telefoni.
 
 ### Notifiche
@@ -224,12 +231,14 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 - `RisolviNotte` applica morti, trappole, Kamikaze, Baby Lupo, Diavolo, Copioni e calcola il risultato dell'alba. Imposta `Fase = Alba` oppure `Finita` se c'è una vittoria.
 - `VaiAlGiorno` passa a `Giorno` (o `Finita` se l'esito è già deciso).
 - `ApriVoto` apre il voto. `Vota` può chiudere subito il rogo oppure aprire il ballottaggio se il Gufo ha aggiunto candidati.
+- `ApriBallottaggio` apre il secondo voto tra i candidati indicati (pareggio al rogo).
 - `ScegliBallottaggio` esegue il rogo tra i candidati.
+- `SaltaRogo` chiude il turno senza condannato (pareggio anche al secondo voto o scelta del narratore).
 - `ProssimaNotte` incrementa il turno e torna a `NotteIntro`.
 
 ### API pubblica di `MotoreLupus`
 
-`Avvia`, `IniziaNotte`, `EseguiPasso`, `ConfermaRisultato`, `RisolviNotte`, `VaiAlGiorno`, `ApriVoto`, `Vota`, `ScegliBallottaggio`, `ProssimaNotte`, `ControllaVittoria`, `ImpostaCapobranco`, `AssegnaCapobrancoCasuale`, `OpzioniPerPotere`, `DescrizionePotere`, `EtichettaPotere`.
+`Avvia`, `IniziaNotte`, `EseguiPasso`, `ConfermaRisultato`, `RisolviNotte`, `VaiAlGiorno`, `ApriVoto`, `Vota`, `ApriBallottaggio`, `ScegliBallottaggio`, `SaltaRogo`, `ProssimaNotte`, `ControllaVittoria`, `ImpostaCapobranco`, `AssegnaCapobrancoCasuale`, `OpzioniPerPotere`, `DescrizionePotere`, `EtichettaPotere`.
 
 ### Invarianti utili
 
@@ -239,7 +248,8 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 - I passi segnaposto degli attori morti hanno `AttoreMorto = true`, `Completato = true` e `Saltato = true`; restano nel diario del narratore ma non vengono mostrati ai giocatori.
 - I passi che richiedono conferma hanno `RichiedeConferma = true`; dopo `EseguiPasso` hanno `Risultato` ma `Completato = false`.
 - `Partita.UltimoRogoId` viene impostato da `EseguiRogo` e serve alla schermata di fine giornata. `PreparaNuovaNotte` lo azzera.
-- `Partita.BallottaggioIds` contiene i candidati del Gufo durante l'alba/giorno/voto; durante il ballottaggio contiene i candidati finali (votato + gufati).
+- `Partita.BallottaggioIds` contiene i candidati del Gufo durante l'alba/giorno/voto; durante il ballottaggio contiene i candidati finali (votato + gufati, oppure i più votati in caso di pareggio + gufati).
+- `Partita.UltimoRogoId` resta `null` quando il rogo viene saltato o quando anche il secondo voto è in parità.
 - `Partita.Esito` non nullo significa partita decisa; la fase può essere `Alba` (vittoria notturna) o `Finita`.
 - Il capobranco è sempre esattamente uno tra i Lupi vivi (se ce ne sono) e viene scelto a caso all'avvio e dopo ogni morte o trasformazione del capo. `AssegnaCapobrancoCasuale` azzera i vecchi flag prima di scegliere.
 
@@ -261,6 +271,7 @@ Le regole sono state portate dalla console, correggendo i bug evidenti. Le modif
 12. **Imputato**: copia i poteri di chi lo ha puntato quella notte e li usa subito. I passi dell'Imputato vengono generati solo dopo i passi con priorità inferiore a 10.
 13. **Vittoria**: Buoni se non restano lupi; Lupi se `lupi >= altri vivi`; Pareggio se non resta nessuno; Diavolo se sbranato e votato nello stesso turno.
 14. **Ruoli morti**: ogni ruolo notturno viene chiamato anche se il suo attore è morto. Il passo è un segnaposto già completato che non produce azioni, così i vivi non possono dedurre quali personaggi sono caduti dal numero o dall'ordine delle chiamate. Il branco resta una chiamata unica: i lupi morti non alterano la chiamata del branco.
+15. **Pareggio al rogo**: se due o più giocatori hanno lo stesso numero massimo di voti si apre un secondo voto solo tra loro (più gli eventuali gufati vivi). Se anche il secondo voto è in parità nessuno va al rogo e si passa all'esecuzione vuota. Il narratore può in ogni caso forzare o saltare il rogo.
 
 Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
@@ -275,9 +286,11 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
   "Risolvi la notte" quando `NotteCompleta`.
 - **Alba**: eventi pubblici, caduti, gufati, eventi riservati, interruttore "Rivela i ruoli dei caduti".
 - **Giorno**: vivi, candidati del Gufo, "Apri il voto".
-- **Voto**: tally live, "Chiudi il voto", pannello pareggio, "Forza il rogo".
-- **Ballottaggio**: candidati, tally live, pareggio, forza.
-- **Esecuzione**: ultimo rogo, interruttore "Rivela il ruolo del condannato", "Cala la notte".
+- **Voto**: tally live, "Chiudi il voto", "Forza il rogo", "Salta il rogo".
+- **Ballottaggio**: candidati, tally live, "Forza il rogo", "Salta il rogo"; il titolo è
+  "Secondo voto" quando nasce da un pareggio (`BallottaggioDaPareggio`).
+- **Esecuzione**: ultimo rogo (o "Nessuno va al rogo"), interruttore "Rivela il ruolo del
+  condannato" solo se c'è un condannato, "Cala la notte".
 - **Finita**: vincitore e riepilogo ruoli.
 - **Sidebar**: timer, elenco giocatori con stato connessione (`📱`) e reveal, stanza/link,
   diario filtrabile.
@@ -292,6 +305,7 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 - **Alba**: eventi pubblici, caduti (ruolo solo se rivelato), gufati.
 - **Giorno**: vivi e candidati.
 - **Voto/Ballottaggio**: picker, voto segreto, avanzamento, esito e tally a chiusura.
+  Il secondo voto (pareggio al rogo) è etichettato come tale.
 - **Esecuzione**: condannato e ruolo se rivelato.
 - **Finita**: vincitore, eventi, ruoli di tutti.
 - **Quaderno**: non esiste. I risultati dei propri passi si vedono nella card dell'azione
@@ -331,7 +345,7 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 ## 10. Test
 
-`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 20 scenari:
+`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 23 scenari:
 
 1. Protezione del Guardiano.
 2. Morte senza protezione.
@@ -346,13 +360,16 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 11. Copione che punta un Copione già trasformato.
 12. Ruoli morti chiamati come segnaposto.
 13. Gufo e ballottaggio.
-14. Imputato.
-15. Capobranco scelto a caso tra i Lupi.
-16. Capobranco rimpiazzato a caso dopo la morte.
-17. Spia che non rivela il potere di chi ha puntato.
-18. Serializzazione.
-19. Validazione composizioni.
-20. Condizioni di vittoria.
+14. Pareggio al rogo: secondo voto tra i più votati.
+15. Secondo voto in parità: nessuno al rogo.
+16. Narratore che salta il rogo dal voto.
+17. Imputato.
+18. Capobranco scelto a caso tra i Lupi.
+19. Capobranco rimpiazzato a caso dopo la morte.
+20. Spia che non rivela il potere di chi ha puntato.
+21. Serializzazione.
+22. Validazione composizioni.
+23. Condizioni di vittoria.
 
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 
@@ -415,7 +432,9 @@ Poi nel browser (narratore + almeno due schede giocatore):
 - Conferma un risultato informativo (Veggente) → il risultato compare nella card del telefono e poi sparisce: nessun quaderno.
 - "Risolvi la notte" → alba → "Vai alla discussione" → "Apri il voto".
 - Vota da due telefoni → il narratore vede il tally → "Chiudi il voto".
-- Pareggio → scegli il candidato → rogo; oppure ballottaggio del Gufo.
+- Pareggio al rogo → secondo voto tra i più votati; se resta il pareggio nessuno va al rogo.
+- "Salta il rogo" dal voto o dal ballottaggio → esecuzione vuota e "Cala la notte".
+- Ballottaggio del Gufo → candidati e rogo.
 - "Cala la notte" → secondo turno.
 - "Rivela i ruoli dei caduti" e "Rivela il ruolo del condannato" cambiano la vista dei telefoni.
 - Fine partita → tutti i ruoli visibili su tutti i dispositivi.

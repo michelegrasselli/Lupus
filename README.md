@@ -79,9 +79,11 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 5. **Alba**: eventi pubblici e caduti. Il narratore decide se rivelare ai telefoni i ruoli
    dei morti (utile per il Becchino) con l'apposito interruttore.
 6. **Giorno / Voto**: il villaggio discute con il timer; il voto si raccoglie dai telefoni
-   con conteggio in tempo reale. In caso di pareggio il narratore sceglie chi va al rogo.
-7. **Ballottaggio**: se il Gufo ha aggiunto candidati, i telefoni votano tra loro.
-8. **Esecuzione**: il narratore annuncia il ruolo del condannato e cala la notte.
+   con conteggio in tempo reale. In caso di pareggio si vota di nuovo solo tra i più votati;
+   se resta il pareggio nessuno va al rogo. Il narratore può forzare o saltare il rogo.
+7. **Ballottaggio**: se il Gufo ha aggiunto candidati, i telefoni votano tra loro; anche qui
+   un pareggio significa nessun rogo.
+8. **Esecuzione**: il narratore annuncia il ruolo del condannato (se c'è) e cala la notte.
 9. **Vittoria**: tutti i ruoli vengono rivelati a tutti i telefoni.
 
 ### Cosa vede ogni telefono
@@ -99,7 +101,8 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 - **Macchina a stati** esplicita: `NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzione → …`
 - **Stanze in memoria** con codice a 5 lettere, posti reclamabili e token per dispositivo.
 - **Azioni notturne dal telefono**, con fallback del narratore.
-- **Voto del rogo e ballottaggio in tempo reale**, con conteggio e gestione dei pareggi.
+- **Voto del rogo e ballottaggio in tempo reale**, con conteggio e gestione dei pareggi
+  (secondo voto tra i più votati, altrimenti nessuno al rogo).
 - **Diario di gioco** filtrabile, con eventi riservati al narratore.
 - **Timer** configurabile per discussione e voto, con beep a fine tempo.
 - **Rivelazioni controllate**: ruoli dei caduti e del condannato solo quando decide il narratore.

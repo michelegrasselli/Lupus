@@ -550,25 +550,10 @@ public sealed class StanzeService
             var p = stanza.Partita;
             if (p.Fase != FasePartita.Voto)
                 return RisultatoChiusura.Fallito("Non è il momento del voto.");
-            if (stanza.VotoChiuso && !stanza.VotoPareggio)
+            if (stanza.VotoChiuso)
                 return RisultatoChiusura.Fallito("Il voto è già chiuso.");
 
-            if (stanza.VotoPareggio)
-            {
-                var scelto = p.Giocatore(sceltaManuale);
-                if (scelto == null || !scelto.Vivo)
-                    return RisultatoChiusura.Fallito("Scegli un giocatore vivo per sciogliere il pareggio.");
-
-                stanza.VotoPareggio = false;
-                stanza.CandidatiPareggio.Clear();
-                risultato = ApplicaVoto(
-                    p,
-                    stanza,
-                    scelto,
-                    $"Il narratore ha scelto {scelto.Nome} per sciogliere il pareggio.");
-                stanza.UltimoAggiornamento = DateTime.Now;
-            }
-            else if (!string.IsNullOrWhiteSpace(sceltaManuale))
+            if (!string.IsNullOrWhiteSpace(sceltaManuale))
             {
                 var scelto = p.Giocatore(sceltaManuale);
                 if (scelto == null || !scelto.Vivo)
@@ -582,7 +567,7 @@ public sealed class StanzeService
                 var voti = stanza.SnapshotVoti();
                 if (voti.Count == 0)
                     return RisultatoChiusura.Fallito(
-                        "Nessun voto registrato. Puoi forzare il rogo dal pannello del narratore.");
+                        "Nessun voto registrato. Puoi forzare il rogo o saltarlo dal pannello del narratore.");
 
                 var gruppi = voti
                     .GroupBy(kv => kv.Value)
@@ -598,17 +583,26 @@ public sealed class StanzeService
 
                 if (testa.Count > 1)
                 {
+                    // Pareggio: seconda votazione solo tra i più votati, più
+                    // gli eventuali candidati del Gufo che restano in gara.
+                    var candidati = testa
+                        .Concat(p.BallottaggioIds.Where(id => p.Giocatore(id)?.Vivo == true))
+                        .Distinct()
+                        .ToList();
+
+                    var esito = MotoreLupus.ApriBallottaggio(p, candidati);
+                    if (!esito.Ok)
+                        return RisultatoChiusura.Fallito(esito.Errore ?? "Ballottaggio non riuscito.");
+
                     stanza.VotoChiuso = true;
-                    stanza.VotoPareggio = true;
-                    stanza.CandidatiPareggio.Clear();
-                    stanza.CandidatiPareggio.AddRange(testa);
+                    stanza.AzzeraVotiBallottaggio();
+                    stanza.BallottaggioDaPareggio = true;
                     stanza.EsitoVoto =
-                        $"Pareggio tra {string.Join(", ", testa.Select(p.NomeDi))}: il narratore deve scegliere.";
+                        $"Pareggio tra {string.Join(", ", testa.Select(p.NomeDi))}: secondo voto tra "
+                        + $"{string.Join(", ", p.BallottaggioIds.Select(p.NomeDi))}.";
                     stanza.UltimoAggiornamento = DateTime.Now;
 
-                    risultato = RisultatoChiusura.PareggioCon(
-                        testa.Select(id => p.Giocatore(id)).OfType<Giocatore>().ToList(),
-                        stanza.EsitoVoto);
+                    risultato = RisultatoChiusura.Successo(stanza.EsitoVoto);
                 }
                 else
                 {
@@ -621,6 +615,47 @@ public sealed class StanzeService
                     stanza.UltimoAggiornamento = DateTime.Now;
                 }
             }
+        }
+
+        await NotificaAsync(stanza.Codice);
+        return risultato;
+    }
+
+    /// <summary>
+    /// Il narratore salta il rogo di questo turno: nessuno muore e si passa
+    /// all'esecuzione vuota, da cui si cala la notte.
+    /// </summary>
+    public async Task<EsitoPasso> SaltaRogoAsync(Stanza stanza, string hostToken)
+    {
+        if (!ValidaHost(stanza, hostToken))
+            return EsitoPasso.Fallito("Token narratore non valido.");
+
+        EsitoPasso risultato;
+
+        lock (_lock)
+        {
+            var p = stanza.Partita;
+            var daVoto = p.Fase == FasePartita.Voto;
+            var daBallottaggio = p.Fase == FasePartita.Ballottaggio;
+
+            risultato = MotoreLupus.SaltaRogo(p);
+            if (!risultato.Ok) return risultato;
+
+            const string messaggio = "Nessuno va al rogo: il narratore ha saltato il voto.";
+
+            if (daVoto)
+            {
+                stanza.VotoChiuso = true;
+                stanza.EsitoVoto = messaggio;
+            }
+
+            if (daBallottaggio)
+            {
+                stanza.BallottaggioChiuso = true;
+                stanza.EsitoBallottaggio = messaggio;
+            }
+
+            stanza.UltimoAggiornamento = DateTime.Now;
         }
 
         await NotificaAsync(stanza.Codice);
@@ -680,25 +715,10 @@ public sealed class StanzeService
             var p = stanza.Partita;
             if (p.Fase != FasePartita.Ballottaggio)
                 return RisultatoChiusura.Fallito("Non è il momento del ballottaggio.");
-            if (stanza.BallottaggioChiuso && !stanza.BallottaggioPareggio)
+            if (stanza.BallottaggioChiuso)
                 return RisultatoChiusura.Fallito("Il ballottaggio è già chiuso.");
 
-            if (stanza.BallottaggioPareggio)
-            {
-                var scelto = p.Giocatore(sceltaManuale);
-                if (scelto == null || !scelto.Vivo || !p.BallottaggioIds.Contains(scelto.Id))
-                    return RisultatoChiusura.Fallito("Scegli uno dei candidati al ballottaggio.");
-
-                stanza.BallottaggioPareggio = false;
-                stanza.CandidatiPareggioBallottaggio.Clear();
-                risultato = ApplicaBallottaggio(
-                    p,
-                    stanza,
-                    scelto,
-                    $"Il narratore ha scelto {scelto.Nome} per sciogliere il pareggio.");
-                stanza.UltimoAggiornamento = DateTime.Now;
-            }
-            else if (!string.IsNullOrWhiteSpace(sceltaManuale))
+            if (!string.IsNullOrWhiteSpace(sceltaManuale))
             {
                 var scelto = p.Giocatore(sceltaManuale);
                 if (scelto == null || !scelto.Vivo || !p.BallottaggioIds.Contains(scelto.Id))
@@ -716,7 +736,7 @@ public sealed class StanzeService
                 var voti = stanza.SnapshotVotiBallottaggio();
                 if (voti.Count == 0)
                     return RisultatoChiusura.Fallito(
-                        "Nessun voto registrato. Puoi forzare il rogo dal pannello del narratore.");
+                        "Nessun voto registrato. Puoi forzare il rogo o saltarlo dal pannello del narratore.");
 
                 var gruppi = voti
                     .GroupBy(kv => kv.Value)
@@ -732,17 +752,17 @@ public sealed class StanzeService
 
                 if (testa.Count > 1)
                 {
+                    // Anche il secondo voto è in parità: nessuno va al rogo.
+                    var esito = MotoreLupus.SaltaRogo(p);
+                    if (!esito.Ok)
+                        return RisultatoChiusura.Fallito(esito.Errore ?? "Rogo non saltato.");
+
                     stanza.BallottaggioChiuso = true;
-                    stanza.BallottaggioPareggio = true;
-                    stanza.CandidatiPareggioBallottaggio.Clear();
-                    stanza.CandidatiPareggioBallottaggio.AddRange(testa);
                     stanza.EsitoBallottaggio =
-                        $"Pareggio tra {string.Join(", ", testa.Select(p.NomeDi))}: il narratore deve scegliere.";
+                        $"Pareggio tra {string.Join(", ", testa.Select(p.NomeDi))}: nessuno va al rogo stanotte.";
                     stanza.UltimoAggiornamento = DateTime.Now;
 
-                    risultato = RisultatoChiusura.PareggioCon(
-                        testa.Select(id => p.Giocatore(id)).OfType<Giocatore>().ToList(),
-                        stanza.EsitoBallottaggio);
+                    risultato = RisultatoChiusura.Successo(stanza.EsitoBallottaggio);
                 }
                 else
                 {
@@ -772,8 +792,6 @@ public sealed class StanzeService
             return RisultatoChiusura.Fallito(esito.Errore ?? "Voto non riuscito.");
 
         stanza.VotoChiuso = true;
-        stanza.VotoPareggio = false;
-        stanza.CandidatiPareggio.Clear();
         stanza.EsitoVoto = messaggio;
 
         if (p.Fase == FasePartita.Ballottaggio)
@@ -801,8 +819,6 @@ public sealed class StanzeService
             return RisultatoChiusura.Fallito(esito.Errore ?? "Ballottaggio non riuscito.");
 
         stanza.BallottaggioChiuso = true;
-        stanza.BallottaggioPareggio = false;
-        stanza.CandidatiPareggioBallottaggio.Clear();
         stanza.EsitoBallottaggio = $"{messaggio} {p.NomeDi(p.UltimoRogoId)} è andato al rogo.";
 
         return RisultatoChiusura.Successo(stanza.EsitoBallottaggio);
@@ -981,8 +997,6 @@ public sealed class RisultatoChiusura
 {
     public bool Ok { get; init; }
     public string? Errore { get; init; }
-    public bool Pareggio { get; init; }
-    public IReadOnlyList<Giocatore> Candidati { get; init; } = Array.Empty<Giocatore>();
     public string? Messaggio { get; init; }
 
     public static RisultatoChiusura Successo(string? messaggio = null) =>
@@ -990,9 +1004,4 @@ public sealed class RisultatoChiusura
 
     public static RisultatoChiusura Fallito(string errore) =>
         new() { Ok = false, Errore = errore };
-
-    public static RisultatoChiusura PareggioCon(
-        IReadOnlyList<Giocatore> candidati,
-        string? messaggio) =>
-        new() { Ok = true, Pareggio = true, Candidati = candidati, Messaggio = messaggio };
 }

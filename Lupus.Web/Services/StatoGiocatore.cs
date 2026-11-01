@@ -37,6 +37,7 @@ public sealed class StatoGiocatore
 
     public StatoVoto? Voto { get; init; }
     public StatoVoto? Ballottaggio { get; init; }
+    public bool SecondoVoto { get; init; }
     public GiocatorePubblico? UltimoRogo { get; init; }
 
     public bool RuoliMortiRivelati { get; init; }
@@ -88,9 +89,7 @@ public sealed class StatoVoto
     public IReadOnlyList<ConteggioVoto> Conteggi { get; init; } = Array.Empty<ConteggioVoto>();
     public IReadOnlyList<string> NonVotanti { get; init; } = Array.Empty<string>();
     public string? Esito { get; init; }
-    public bool Pareggio { get; init; }
     public IReadOnlyList<GiocatorePubblico> Candidati { get; init; } = Array.Empty<GiocatorePubblico>();
-    public IReadOnlyList<GiocatorePubblico> CandidatiPareggio { get; init; } = Array.Empty<GiocatorePubblico>();
 }
 
 public static class StatoGiocatoreFactory
@@ -220,8 +219,6 @@ public static class StatoGiocatoreFactory
             aperto: p.Fase == FasePartita.Voto && !stanza.VotoChiuso,
             chiuso: stanza.VotoChiuso,
             esito: stanza.EsitoVoto,
-            pareggio: stanza.VotoPareggio,
-            candidatiPareggioIds: stanza.CandidatiPareggio,
             candidati: p.Fase == FasePartita.Voto
                 ? p.Vivi.Where(g => g.Id != giocatore.Id).ToList()
                 : new List<Giocatore>(),
@@ -235,8 +232,6 @@ public static class StatoGiocatoreFactory
             aperto: p.Fase == FasePartita.Ballottaggio && !stanza.BallottaggioChiuso,
             chiuso: stanza.BallottaggioChiuso,
             esito: stanza.EsitoBallottaggio,
-            pareggio: stanza.BallottaggioPareggio,
-            candidatiPareggioIds: stanza.CandidatiPareggioBallottaggio,
             candidati: p.Fase == FasePartita.Ballottaggio
                 ? p.BallottaggioIds
                     .Select(id => p.Giocatore(id))
@@ -274,6 +269,7 @@ public static class StatoGiocatoreFactory
             EventiAlba = eventiAlba,
             Voto = voto,
             Ballottaggio = ballottaggio,
+            SecondoVoto = p.Fase == FasePartita.Ballottaggio && stanza.BallottaggioDaPareggio,
             UltimoRogo = ultimoRogo,
             RuoliMortiRivelati = mostraRuoliMorti,
             RuoloRogoRivelato = mostraRuoloRogo
@@ -287,8 +283,6 @@ public static class StatoGiocatoreFactory
         bool aperto,
         bool chiuso,
         string? esito,
-        bool pareggio,
-        IReadOnlyList<string> candidatiPareggioIds,
         IReadOnlyList<Giocatore> candidati,
         bool mostraConteggi,
         Func<Giocatore, GiocatorePubblico> pub)
@@ -319,12 +313,6 @@ public static class StatoGiocatoreFactory
 
         var candidatiPubblici = candidati.Select(pub).ToList();
 
-        var candidatiPareggio = candidatiPareggioIds
-            .Select(id => p.Giocatore(id))
-            .OfType<Giocatore>()
-            .Select(pub)
-            .ToList();
-
         return new StatoVoto
         {
             Aperto = aperto,
@@ -337,9 +325,7 @@ public static class StatoGiocatoreFactory
             Conteggi = conteggi,
             NonVotanti = nonVotanti,
             Esito = esito,
-            Pareggio = pareggio,
-            Candidati = candidatiPubblici,
-            CandidatiPareggio = candidatiPareggio
+            Candidati = candidatiPubblici
         };
     }
 

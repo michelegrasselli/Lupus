@@ -18,6 +18,9 @@ var tests = new (string Nome, Action Test)[]
     ("Copione: copia un Copione che ha già copiato", CopioneCopiaCopioneTrasformato),
     ("Ruoli morti: vengono comunque chiamati", RuoliMortiChiamati),
     ("Gufo: ballottaggio", GufoBallottaggio),
+    ("Rogo: pareggio e secondo voto", PareggioAlRogo),
+    ("Rogo: secondo voto in parità, nessuno al rogo", PareggioAncheAlSecondoVoto),
+    ("Rogo: il narratore salta il voto", SaltaRogoDalVoto),
     ("Imputato: copia i poteri", Imputato),
     ("Capobranco: scelto a caso tra i lupi", CapobrancoCasuale),
     ("Capobranco: rimpiazzato a caso dopo la morte", CapobrancoRimpiazzato),
@@ -509,6 +512,100 @@ static void GufoBallottaggio()
     esito = MotoreLupus.ScegliBallottaggio(p, G(p, "Anna").Id);
     Require(esito.Ok, esito.Errore);
     Require(!G(p, "Anna").Vivo, "Anna doveva andare al rogo.");
+}
+
+static void PareggioAlRogo()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Guardiano", Ruolo.Guardiano),
+        ("Veggente", Ruolo.Veggente),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino),
+        ("Carla", Ruolo.Contadino));
+
+    Notte(p);
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Anna"),
+        Potere.Guardiano => Nome(p, "Anna"),
+        Potere.Veggente => Nome(p, "Lupo"),
+        _ => null
+    });
+
+    MotoreLupus.VaiAlGiorno(p);
+    MotoreLupus.ApriVoto(p);
+
+    var esito = MotoreLupus.ApriBallottaggio(p, new[] { G(p, "Anna").Id, G(p, "Bruno").Id });
+    Require(esito.Ok, esito.Errore);
+    Require(p.Fase == FasePartita.Ballottaggio, "Il pareggio doveva aprire il secondo voto.");
+    Require(p.BallottaggioIds.Count == 2, "Il secondo voto deve avere solo i due più votati.");
+
+    esito = MotoreLupus.ScegliBallottaggio(p, G(p, "Anna").Id);
+    Require(esito.Ok, esito.Errore);
+    Require(!G(p, "Anna").Vivo, "Anna doveva andare al rogo.");
+    Require(p.Fase == FasePartita.Esecuzione, "Dopo il rogo si passa all'esecuzione.");
+}
+
+static void PareggioAncheAlSecondoVoto()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Guardiano", Ruolo.Guardiano),
+        ("Veggente", Ruolo.Veggente),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino),
+        ("Carla", Ruolo.Contadino));
+
+    Notte(p);
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Anna"),
+        Potere.Guardiano => Nome(p, "Anna"),
+        Potere.Veggente => Nome(p, "Lupo"),
+        _ => null
+    });
+
+    MotoreLupus.VaiAlGiorno(p);
+    MotoreLupus.ApriVoto(p);
+
+    var esito = MotoreLupus.ApriBallottaggio(p, new[] { G(p, "Anna").Id, G(p, "Bruno").Id });
+    Require(esito.Ok, esito.Errore);
+
+    esito = MotoreLupus.SaltaRogo(p);
+    Require(esito.Ok, esito.Errore);
+    Require(p.Fase == FasePartita.Esecuzione, "Dopo il pareggio si passa all'esecuzione vuota.");
+    Require(p.UltimoRogoId == null, "Non doveva esserci un condannato.");
+    Require(p.TotaleVivi == 6, "Nessuno doveva morire.");
+}
+
+static void SaltaRogoDalVoto()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Guardiano", Ruolo.Guardiano),
+        ("Veggente", Ruolo.Veggente),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino),
+        ("Carla", Ruolo.Contadino));
+
+    Notte(p);
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Anna"),
+        Potere.Guardiano => Nome(p, "Anna"),
+        Potere.Veggente => Nome(p, "Lupo"),
+        _ => null
+    });
+
+    MotoreLupus.VaiAlGiorno(p);
+    MotoreLupus.ApriVoto(p);
+
+    var esito = MotoreLupus.SaltaRogo(p);
+    Require(esito.Ok, esito.Errore);
+    Require(p.Fase == FasePartita.Esecuzione, "Il salto del rogo porta all'esecuzione vuota.");
+    Require(p.UltimoRogoId == null, "Non doveva esserci un condannato.");
+    Require(p.TotaleVivi == 6, "Nessuno doveva morire.");
 }
 
 static void Imputato()

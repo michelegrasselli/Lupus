@@ -475,6 +475,57 @@ public static class MotoreLupus
         return EseguiRogo(p, giocatoreId);
     }
 
+    /// <summary>
+    /// Apre un ballottaggio tra i candidati indicati: i giocatori in parità al
+    /// rogo e, se ci sono, quelli segnalati dal Gufo. La seconda votazione
+    /// avviene solo tra questi nomi.
+    /// </summary>
+    public static EsitoPasso ApriBallottaggio(Partita p, IEnumerable<string> candidatiIds)
+    {
+        if (p.Fase != FasePartita.Voto)
+            return EsitoPasso.Fallito("Non è il momento del voto.");
+
+        var candidati = candidatiIds
+            .Where(id => p.Giocatore(id)?.Vivo == true)
+            .Distinct()
+            .ToList();
+
+        if (candidati.Count < 2)
+            return EsitoPasso.Fallito("Serve più di un candidato per il ballottaggio.");
+
+        p.BallottaggioIds = candidati;
+        p.Fase = FasePartita.Ballottaggio;
+        p.AggiungiLog(
+            $"Secondo voto tra: {string.Join(", ", candidati.Select(p.NomeDi))}.",
+            TipoLog.Voto);
+
+        return EsitoPasso.Successo();
+    }
+
+    /// <summary>
+    /// Nessuno va al rogo in questo turno (pareggio anche al ballottaggio o
+    /// scelta del narratore). Si passa all'esecuzione vuota, così il narratore
+    /// può annunciare e calare la notte.
+    /// </summary>
+    public static EsitoPasso SaltaRogo(Partita p)
+    {
+        if (p.Fase is not (FasePartita.Voto or FasePartita.Ballottaggio))
+            return EsitoPasso.Fallito("Non è il momento del rogo.");
+
+        p.VotatoId = null;
+        p.BallottaggioIds.Clear();
+        p.UltimoRogoId = null;
+
+        // Senza rogo il Diavolo sbranato non viene votato: il flag non deve
+        // restare acceso per il turno successivo.
+        foreach (var g in p.Giocatori) g.DiavoloSbranato = false;
+
+        p.Fase = FasePartita.Esecuzione;
+        p.AggiungiLog("Nessuno va al rogo: il villaggio si prepara a una nuova notte.", TipoLog.Voto);
+
+        return EsitoPasso.Successo();
+    }
+
     private static EsitoPasso EseguiRogo(Partita p, string giocatoreId)
     {
         var g = p.Giocatore(giocatoreId);
