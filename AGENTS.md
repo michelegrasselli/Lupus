@@ -59,8 +59,11 @@ dotnet publish Lupus.Web/Lupus.Web.csproj -c Release
 
 > La porta 5092 e il binding `http://0.0.0.0:5092` sono in `appsettings.json` (`"Urls"`),
 > quindi valgono anche per l'exe pubblicato. `launchSettings.json` viene usato solo da
-> `dotnet run`/IDE: l'exe dentro `bin\Debug\net10.0` non è distribuibile (manca `wwwroot`)
-> e senza `Urls` ripiegherebbe sulla porta 5000.
+> `dotnet run`/IDE. L'exe dentro `bin\Debug\net10.0` funziona anche lanciato direttamente
+> perché `Program.cs` abilita `StaticWebAssetsLoader` fuori da Development: senza quel
+> loader partirebbe in Production senza `wwwroot` e servirebbe CSS e `_framework` vuoti o
+> in errore (UI bianca e senza interattività). Per distribuire resta consigliato `publish`,
+> che include `wwwroot` e non dipende dai sorgenti.
 
 Se i telefoni non raggiungono il PC, apri la porta TCP 5092 nel firewall di Windows
 (profilo privato):
@@ -316,6 +319,9 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 - `App.razor` usa `prerender: false`: JS/localStorage sono disponibili in `OnAfterRenderAsync`,
   non in `OnInitialized`.
+- `Program.cs` chiama `StaticWebAssetsLoader.UseStaticWebAssets` fuori da Development. È la
+  rete di sicurezza per l'exe lanciato da `bin/`: senza, `MapStaticAssets` non serve
+  `app.css` né `_framework/blazor.web.js` e la UI resta senza stile e senza interattività.
 - Le pagine risolvono il token da query string e, se manca, da `ArchivioSessioni`.
 - `Stanze.Ottieni` va richiamato a ogni aggiornamento: la stanza può essere stata chiusa o
   sostituita.

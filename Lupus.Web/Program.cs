@@ -1,7 +1,17 @@
 using Lupus.Web.Components;
 using Lupus.Web.Services;
+using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// L'eseguibile dentro bin/ parte in Production: senza questo loader
+// MapStaticAssets non serve né app.css né _framework/blazor.web.js, quindi la
+// UI resta senza stile e senza interattività. Su un publish il manifest non
+// esiste e la chiamata non ha effetto.
+if (!builder.Environment.IsDevelopment())
+{
+    StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
+}
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
