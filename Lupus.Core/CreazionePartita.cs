@@ -82,6 +82,36 @@ public static class CreazionePartita
         return partita;
     }
 
+    /// <summary>
+    /// Crea una partita da un elenco esplicito di giocatori con il proprio
+    /// ruolo: il narratore decide chi è Lupo, chi è Veggente e così via.
+    /// I ruoli non vengono mescolati e l'ordine dell'elenco non conta.
+    /// </summary>
+    public static Partita CreaDaRuoli(IReadOnlyList<(string Nome, Ruolo Ruolo)> giocatori)
+    {
+        var nomi = giocatori.Select(g => g.Nome).ToList();
+        var composizione = giocatori
+            .GroupBy(g => g.Ruolo)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var errori = Valida(nomi.Count, composizione, nomi);
+        if (errori.Count > 0)
+            throw new ArgumentException(string.Join(" ", errori));
+
+        var partita = new Partita();
+        foreach (var (nome, ruolo) in giocatori)
+        {
+            partita.Giocatori.Add(new Giocatore
+            {
+                Nome = nome.Trim(),
+                Ruolo = ruolo
+            });
+        }
+
+        MotoreLupus.Avvia(partita);
+        return partita;
+    }
+
     private static void Mescola<T>(IList<T> lista)
     {
         for (int i = lista.Count - 1; i > 0; i--)

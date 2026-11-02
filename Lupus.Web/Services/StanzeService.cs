@@ -31,6 +31,17 @@ public sealed class StanzeService
     }
 
     /// <summary>
+    /// Crea una stanza da un elenco esplicito di giocatori con il proprio
+    /// ruolo, come li aggiunge il narratore dalla home.
+    /// </summary>
+    public (Stanza Stanza, string HostToken) CreaDaRuoli(
+        IReadOnlyList<(string Nome, Ruolo Ruolo)> giocatori)
+    {
+        var partita = CreazionePartita.CreaDaRuoli(giocatori);
+        return CreaDaPartita(partita, avviata: false);
+    }
+
+    /// <summary>
     /// Crea una stanza da una partita già esistente (import JSON o ripresa).
     /// </summary>
     public (Stanza Stanza, string HostToken) CreaDaPartita(Partita partita, bool avviata)

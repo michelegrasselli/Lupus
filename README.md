@@ -63,14 +63,15 @@ New-NetFirewallRule -DisplayName "Lupus 5092" -Direction Inbound -Protocol TCP -
 # Build dell'intera soluzione
 dotnet build Lupus.slnx
 
-# Test del motore di gioco (24 scenari)
+# Test del motore di gioco (25 scenari)
 dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 ```
 
 ## Come si gioca
 
-1. **Crea la stanza** (`/`): scegli un preset o imposta numero e ruoli, inserisci i nomi.
-   Il server assegna subito i ruoli, ma i telefoni non li vedono finché non avvii.
+1. **Crea la stanza** (`/`): parti da zero giocatori e aggiungili uno alla volta, scegliendo
+   per ognuno nome e ruolo. Il server conosce subito i ruoli, ma i telefoni non li vedono
+   finché non avvii.
 2. **Fai entrare i giocatori**: mostra il link `http://<IP>:5092/entra/<CODICE>` o il
    codice a 5 lettere. Ogni giocatore tocca il proprio nome e reclama il posto.
 3. **Avvia la partita** dal pannello del narratore: ogni telefono mostra il proprio ruolo.
@@ -97,7 +98,7 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 
 ## Funzionalità
 
-- **18 ruoli** con preset Rapida (6), Classica (8), Villaggio (10), Caos (14), Completa (18).
+- **18 ruoli** assegnati dal narratore giocatore per giocatore, senza preset da mescolare.
 - **Macchina a stati** esplicita: `NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzione → …`
 - **Stanze in memoria** con codice a 5 lettere, posti reclamabili e token per dispositivo.
 - **Azioni notturne dal telefono**, con fallback del narratore.
@@ -115,7 +116,7 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 Lupus.slnx
 ├── Lupus/              # vecchia app console (riferimento storico, invariata)
 ├── Lupus.Core/         # motore di gioco puro e serializzabile
-├── Lupus.Core.Tests/   # harness console con 24 scenari di regole
+├── Lupus.Core.Tests/   # harness console con 25 scenari di regole
 └── Lupus.Web/          # Blazor Server, UI italiana, stanze multiplayer
 ```
 

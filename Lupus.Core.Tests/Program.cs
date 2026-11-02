@@ -28,6 +28,7 @@ var tests = new (string Nome, Action Test)[]
     ("Spia: non rivela il potere di chi ha puntato", SpiaNonRivelaPotere),
     ("Serializzazione: salva e ricarica", Salvataggio),
     ("Validazione: composizioni", Validazione),
+    ("Creazione: ruoli espliciti scelti dal narratore", CreazioneRuoliEspliciti),
     ("Vittoria: condizioni base", Vittoria)
 };
 
@@ -830,6 +831,43 @@ static void Validazione()
 
     var nomiDuplicati = CreazionePartita.Valida(6, composizione, new[] { "A", "A", "C", "D", "E", "F" });
     Require(nomiDuplicati.Count > 0, "I nomi duplicati dovevano essere rifiutati.");
+}
+
+static void CreazioneRuoliEspliciti()
+{
+    var p = CreazionePartita.CreaDaRuoli(new List<(string, Ruolo)>
+    {
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Lupo),
+        ("Carla", Ruolo.Veggente),
+        ("Dario", Ruolo.Lupo),
+        ("Elena", Ruolo.Contadino),
+        ("Fabio", Ruolo.Contadino)
+    });
+
+    Require(p.Giocatori.Count == 6, $"Dovevano esserci 6 giocatori, ce ne sono {p.Giocatori.Count}.");
+    Require(G(p, "Anna").Ruolo == Ruolo.Contadino, "Anna doveva restare Contadino.");
+    Require(G(p, "Bruno").Ruolo == Ruolo.Lupo, "Bruno doveva essere Lupo.");
+    Require(G(p, "Carla").Ruolo == Ruolo.Veggente, "Carla doveva essere la Veggente.");
+    Require(G(p, "Dario").Ruolo == Ruolo.Lupo, "Dario doveva essere Lupo.");
+
+    var rifiutata = false;
+    try
+    {
+        CreazionePartita.CreaDaRuoli(new List<(string, Ruolo)>
+        {
+            ("Anna", Ruolo.Lupo),
+            ("Anna", Ruolo.Contadino),
+            ("Carla", Ruolo.Contadino),
+            ("Dario", Ruolo.Contadino)
+        });
+    }
+    catch (ArgumentException)
+    {
+        rifiutata = true;
+    }
+
+    Require(rifiutata, "Un elenco con nomi duplicati doveva essere rifiutato.");
 }
 
 static void Vittoria()
