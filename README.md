@@ -63,7 +63,7 @@ New-NetFirewallRule -DisplayName "Lupus 5092" -Direction Inbound -Protocol TCP -
 # Build dell'intera soluzione
 dotnet build Lupus.slnx
 
-# Test del motore di gioco (14 scenari)
+# Test del motore di gioco (24 scenari)
 dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 ```
 
@@ -115,7 +115,7 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 Lupus.slnx
 ├── Lupus/              # vecchia app console (riferimento storico, invariata)
 ├── Lupus.Core/         # motore di gioco puro e serializzabile
-├── Lupus.Core.Tests/   # harness console con 14 scenari di regole
+├── Lupus.Core.Tests/   # harness console con 24 scenari di regole
 └── Lupus.Web/          # Blazor Server, UI italiana, stanze multiplayer
 ```
 

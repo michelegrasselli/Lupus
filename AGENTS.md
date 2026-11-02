@@ -260,7 +260,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 
 Le regole sono state portate dalla console, correggendo i bug evidenti. Le modifiche principali:
 
-1. **I lupi scelgono solo non-lupi**: `OpzioniPerPotere(Potere.Lupo)` esclude `Ruolo.Lupo` e l'attore stesso.
+1. **I lupi scelgono solo non-lupi**: `OpzioniPerPotere(Potere.Lupo)` esclude `Ruolo.Lupo` e l'attore stesso. La regola vale per il branco: il potere copiato dell'Imputato (`Potere.ImputatoLupo`) è un attacco solitario e può puntare anche un Lupo.
 2. **Tutti i giocatori con lo stesso ruolo agiscono**: i passi notturni vengono generati per ogni attore vivo (Becchino, Cacciatore, Copione, Copione2, ecc.).
 3. **Trappola del Cacciatore**: se il branco attacca il bersaglio trappolato, la vittima si salva e muore il capobranco. Se l'attacco arriva dal potere copiato dell'Imputato, muore l'Imputato.
 4. **Kamikaze**: se il branco lo attacca, il Kamikaze sopravvive e muore il capobranco. Se è protetto dal Guardiano, la protezione ha la precedenza e non esplode.
@@ -271,7 +271,7 @@ Le regole sono state portate dalla console, correggendo i bug evidenti. Le modif
 9. **Cacciatore**: dopo aver piazzato una trappola, la notte successiva non può piazzarne un'altra (`TrappolaInCooldown`).
 10. **Sfigato**: appare CATTIVO alle indagini (Veggente/Becchino), ma non è un Lupo e non conta per la vittoria del branco.
 11. **Annullatore**: blocca il potere del bersaglio per la notte. I Lupi sono immuni se ci sono più lupi vivi (branco).
-12. **Imputato**: copia i poteri di chi lo ha puntato quella notte e li usa subito. I passi dell'Imputato vengono generati solo dopo i passi con priorità inferiore a 10.
+12. **Imputato**: copia i poteri di chi lo ha puntato quella notte e li usa subito. I passi dell'Imputato vengono generati solo dopo i passi con priorità inferiore a 10. Se copia il Lupo, il suo attacco può colpire anche un Lupo vero (il branco invece non può).
 13. **Vittoria**: Buoni se non restano lupi; Lupi se `lupi >= altri vivi`; Pareggio se non resta nessuno; Diavolo se sbranato e votato nello stesso turno.
 14. **Ruoli morti**: ogni ruolo notturno viene chiamato anche se il suo attore è morto. Il passo è un segnaposto già completato che non produce azioni, così i vivi non possono dedurre quali personaggi sono caduti dal numero o dall'ordine delle chiamate. Il branco resta una chiamata unica: i lupi morti non alterano la chiamata del branco.
 15. **Pareggio al rogo**: se due o più giocatori hanno lo stesso numero massimo di voti si apre un secondo voto solo tra loro (più gli eventuali gufati vivi). Se anche il secondo voto è in parità nessuno va al rogo e si passa all'esecuzione vuota. Il narratore può in ogni caso forzare o saltare il rogo.
@@ -351,7 +351,7 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 ## 10. Test
 
-`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 23 scenari:
+`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 24 scenari:
 
 1. Protezione del Guardiano.
 2. Morte senza protezione.
@@ -370,12 +370,13 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 15. Secondo voto in parità: nessuno al rogo.
 16. Narratore che salta il rogo dal voto.
 17. Imputato.
-18. Capobranco scelto a caso tra i Lupi.
-19. Capobranco rimpiazzato a caso dopo la morte.
-20. Spia che non rivela il potere di chi ha puntato.
-21. Serializzazione.
-22. Validazione composizioni.
-23. Condizioni di vittoria.
+18. Imputato che, copiato il Lupo, sbrana un Lupo.
+19. Capobranco scelto a caso tra i Lupi.
+20. Capobranco rimpiazzato a caso dopo la morte.
+21. Spia che non rivela il potere di chi ha puntato.
+22. Serializzazione.
+23. Validazione composizioni.
+24. Condizioni di vittoria.
 
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 

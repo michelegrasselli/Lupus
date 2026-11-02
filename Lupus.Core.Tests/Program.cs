@@ -22,6 +22,7 @@ var tests = new (string Nome, Action Test)[]
     ("Rogo: secondo voto in parità, nessuno al rogo", PareggioAncheAlSecondoVoto),
     ("Rogo: il narratore salta il voto", SaltaRogoDalVoto),
     ("Imputato: copia i poteri", Imputato),
+    ("Imputato: il potere copiato del Lupo può sbranare un Lupo", ImputatoSbranaLupo),
     ("Capobranco: scelto a caso tra i lupi", CapobrancoCasuale),
     ("Capobranco: rimpiazzato a caso dopo la morte", CapobrancoRimpiazzato),
     ("Spia: non rivela il potere di chi ha puntato", SpiaNonRivelaPotere),
@@ -640,6 +641,49 @@ static void Imputato()
     Require(passiImputato.Any(x => x.Potere == Potere.ImputatoVeggente &&
                                    x.Risultato?.Contains("CATTIVO") == true),
         "Il potere copiato della Veggente doveva vedere il Lupo come CATTIVO.");
+}
+
+static void ImputatoSbranaLupo()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Lupo2", Ruolo.Lupo),
+        ("Imputato", Ruolo.Imputato),
+        ("Guardiano", Ruolo.Guardiano),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino),
+        ("Carla", Ruolo.Contadino),
+        ("Dario", Ruolo.Contadino));
+
+    Notte(p);
+
+    // Il branco può scegliere solo non-lupi, ma il potere copiato dell'Imputato
+    // è un attacco solitario: può colpire anche un Lupo vero.
+    var opzioniBranco = MotoreLupus.OpzioniPerPotere(p, G(p, "Lupo"), Potere.Lupo);
+    Require(!opzioniBranco.Contains(G(p, "Lupo").Id) &&
+            !opzioniBranco.Contains(G(p, "Lupo2").Id),
+        "Il branco non deve poter sbranare un Lupo.");
+
+    var opzioniImputato = MotoreLupus.OpzioniPerPotere(p, G(p, "Imputato"), Potere.ImputatoLupo);
+    Require(opzioniImputato.Contains(G(p, "Lupo").Id) &&
+            opzioniImputato.Contains(G(p, "Lupo2").Id),
+        "L'Imputato doveva poter puntare un Lupo con il potere copiato.");
+    Require(!opzioniImputato.Contains(G(p, "Imputato").Id),
+        "L'Imputato non doveva poter puntare se stesso.");
+
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Imputato"),
+        Potere.Guardiano => Nome(p, "Imputato"),
+        Potere.ImputatoLupo => Nome(p, "Lupo"),
+        // Il Guardiano ha puntato l'Imputato, che quindi copia anche la
+        // protezione: la usiamo su Anna per non salvare proprio il Lupo.
+        Potere.ImputatoGuardiano => Nome(p, "Anna"),
+        _ => null
+    });
+
+    Require(!G(p, "Lupo").Vivo, "Il potere copiato dell'Imputato doveva sbranare il Lupo.");
+    Require(G(p, "Imputato").Vivo, "L'Imputato doveva essere protetto dal Guardiano.");
 }
 
 static void CapobrancoCasuale()

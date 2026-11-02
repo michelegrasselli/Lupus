@@ -963,7 +963,7 @@ public static class MotoreLupus
                 return $"Dalla prossima notte {attore.Nome} sarà {Ruoli.Nome(bersaglio.Ruolo)}.";
 
             case Potere.ImputatoLupo:
-                return $"Tramite il potere copiato del Lupo, il branco ha scelto {bersaglio.Nome}.";
+                return $"Tramite il potere copiato del Lupo, {attore.Nome} ha scelto {bersaglio.Nome}.";
 
             case Potere.ImputatoGuardiano:
                 return $"{bersaglio.Nome} sarà protetto stanotte (potere copiato).";
@@ -1050,9 +1050,14 @@ public static class MotoreLupus
     {
         return potere switch
         {
-            Potere.Lupo or Potere.ImputatoLupo =>
+            Potere.Lupo =>
                 p.Vivi.Where(g => g.Ruolo != Ruolo.Lupo && g.Id != attore.Id)
                     .Select(g => g.Id).ToList(),
+
+            // L'Imputato non fa parte del branco: il potere copiato è un attacco
+            // solitario e può colpire anche un Lupo, che muore come chiunque altro.
+            Potere.ImputatoLupo =>
+                p.Vivi.Where(g => g.Id != attore.Id).Select(g => g.Id).ToList(),
 
             Potere.Becchino =>
                 p.Giocatori.Where(g => !g.Vivo).Select(g => g.Id).ToList(),
@@ -1098,7 +1103,7 @@ public static class MotoreLupus
         Potere.Veggente => "Di chi vuoi sapere stanotte?",
         Potere.Spia => "Chi spierai stanotte?",
         Potere.Copione or Potere.Copione2 => "Chi copierai stanotte?",
-        Potere.ImputatoLupo => "Chi verrà mangiato stanotte? (potere copiato del Lupo)",
+        Potere.ImputatoLupo => "Chi verrà sbranato stanotte? (potere copiato del Lupo)",
         Potere.ImputatoGuardiano => "Chi proteggerai stanotte? (potere copiato del Guardiano)",
         Potere.ImputatoPuttana => "Con chi vuoi spassartela stanotte? (potere copiato della Puttana)",
         Potere.ImputatoVeggente => "Di chi vuoi sapere stanotte? (potere copiato della Veggente)",
