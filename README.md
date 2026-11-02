@@ -69,9 +69,9 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 
 ## Come si gioca
 
-1. **Crea la stanza** (`/`): parti da zero giocatori e aggiungili uno alla volta, scegliendo
-   per ognuno nome e ruolo. Il server conosce subito i ruoli, ma i telefoni non li vedono
-   finché non avvii.
+1. **Crea la stanza** (`/`): imposta il numero di giocatori, la composizione dei ruoli e i
+   nomi. Il server assegna subito i ruoli (mescolandoli), ma i telefoni non li vedono finché
+   non avvii.
 2. **Fai entrare i giocatori**: mostra il link `http://<IP>:5092/entra/<CODICE>` o il
    codice a 5 lettere. Ogni giocatore tocca il proprio nome e reclama il posto.
 3. **Avvia la partita** dal pannello del narratore: ogni telefono mostra il proprio ruolo.
@@ -98,7 +98,7 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 
 ## Funzionalità
 
-- **18 ruoli** assegnati dal narratore giocatore per giocatore, senza preset da mescolare.
+- **18 ruoli** con composizione scelta dal narratore (contatori +/−) e nomi personalizzati.
 - **Macchina a stati** esplicita: `NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzione → …`
 - **Stanze in memoria** con codice a 5 lettere, posti reclamabili e token per dispositivo.
 - **Azioni notturne dal telefono**, con fallback del narratore.

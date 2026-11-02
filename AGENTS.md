@@ -93,7 +93,7 @@ Lupus.slnx
 | `Partita.cs` | Stato serializzabile: giocatori, turno, fase, passi notte, azioni, risultato, voto, ballottaggio, esito, log, timer. Contiene `Normalizza()` e `PreparaNuovaNotte()`. |
 | `Modelli.cs` | Enum `FasePartita`, `EsitoPartita`, `TipoLog`, `TipoPasso`, `Potere`; classi `PassoNotte`, `AzioneNotte`, `VoceLog`, `EventoNotte`, `RisultatoNotte`, `EsitoPasso`. |
 | `MotoreLupus.cs` | Tutte le transizioni di stato e le regole notturne/di voto. Unica fonte di verità. |
-| `CreazionePartita.cs` | Validazione configurazione, creazione giocatori, assegnazione casuale dei ruoli o da una mappa nome→ruolo scelta dal narratore. |
+| `CreazionePartita.cs` | Validazione configurazione, creazione giocatori, assegnazione casuale dei ruoli (o esplicita da una mappa nome→ruolo). |
 | `Preset.cs` | 5 preset storici (Rapida 6, Classica 8, Villaggio 10, Caos 14, Completa 18): restano come API del motore, ma la Home non li usa più. |
 | `Serializzazione.cs` | JSON con enum come stringhe, wrapper `SalvataggioPartita`, deserializzazione tollerante. |
 
@@ -103,7 +103,7 @@ Lupus.slnx
 | --- | --- |
 | `Program.cs` | Registra Razor Components, `StanzeService` (singleton), `ReteHelper` (singleton), `ArchivioPartita`/`ArchivioSessioni` (scoped); static assets; interactive server. |
 | `Components/App.razor` | HTML base italiano, `prerender: false`, CSS, script `lupus.js`. |
-| `Components/Pages/Home.razor` | Crea una stanza partendo da zero giocatori, con nome e ruolo scelti dal narratore uno alla volta; entra con codice, riprende le sessioni, importa un JSON. |
+| `Components/Pages/Home.razor` | Crea una stanza partendo da zero posti: numero di giocatori, composizione dei ruoli con +/−, nomi. Entra con codice, riprende le sessioni, importa un JSON. |
 | `Components/Pages/Entra.razor` | `/entra` e `/entra/{Codice}`: inserimento codice, elenco posti, reclamo del posto, rientro, "Dimentica". |
 | `Components/Pages/Gioca.razor` | `/gioca/{Codice}?t=...`: lobby, ruolo privato, azioni notturne, alba, discussione, voto, ballottaggio, esecuzione, finale. |
 | `Components/Pages/PartitaGioco.razor` | `/partita/{Codice}?h=...`: dashboard narratore, lobby e link, passi notte, alba, voto live, ballottaggio, rogo, finale, diario, timer, rivelazioni, chiusura stanza. |
@@ -139,8 +139,8 @@ Lupus.slnx
 
 ### Ciclo di vita
 
-1. `Home` → `StanzeService.CreaDaRuoli(...)` → `CreazionePartita.CreaDaRuoli(...)` (il narratore
-   ha già scelto nome e ruolo di ogni giocatore) → stanza in `NotteIntro` con `Avviata = false`.
+1. `Home` → `StanzeService.Crea(...)` → `CreazionePartita.Crea(...)` (i ruoli vengono
+   assegnati e mescolati) → stanza in `NotteIntro` con `Avviata = false`.
 2. I giocatori aprono `/entra/<codice>`, scelgono un posto libero → `UnisciAsync` genera il
    token del posto.
 3. Il narratore apre `/partita/<codice>?h=<hostToken>` e preme **Avvia la partita** →
@@ -433,7 +433,7 @@ dotnet run --project Lupus.Web --launch-profile http
 
 Poi nel browser (narratore + almeno due schede giocatore):
 
-- Home → aggiungi 4+ giocatori con nome e ruolo → "Crea la stanza" → codice e link visibili.
+- Home → imposta numero giocatori, ruoli e nomi → "Crea la stanza" → codice e link visibili.
 - Apri il link in due schede → reclama due posti → i telefoni sono in lobby senza ruolo.
 - "Avvia la partita" → ogni telefono vede il proprio ruolo.
 - "Inizia la notte" → il giocatore di turno agisce → il passo avanza per tutti.

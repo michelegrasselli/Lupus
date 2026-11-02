@@ -823,86 +823,6 @@ label:focus-visible {
     cursor: pointer;
 }
 
-/* --- Creazione: si parte da zero, un giocatore per ruolo --------------- */
-
-.draft-add {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 8px;
-}
-
-.draft-name,
-.role-select {
-    min-width: 0;
-    padding: 11px 13px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--panel-2);
-    color: var(--text);
-    font-size: 1rem;
-}
-
-.draft-name {
-    flex: 1 1 200px;
-}
-
-.role-select {
-    flex: 1 1 180px;
-    cursor: pointer;
-}
-
-.draft-name:focus,
-.role-select:focus {
-    border-color: var(--accent);
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(139, 124, 246, 0.2);
-}
-
-.draft-add .btn {
-    flex: 0 0 auto;
-}
-
-.draft-list {
-    display: grid;
-    gap: 8px;
-    margin-top: 14px;
-}
-
-.draft-player {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    background: var(--panel-2);
-}
-
-.draft-player-body {
-    display: grid;
-    flex: 1;
-    min-width: 0;
-    gap: 2px;
-}
-
-.draft-player-body strong {
-    overflow: hidden;
-    font-size: 0.92rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.draft-empty {
-    margin-top: 14px;
-    padding: 12px 14px;
-    border: 1px dashed var(--border);
-    border-radius: 12px;
-    color: var(--muted-2);
-    font-size: 0.82rem;
-    line-height: 1.5;
-}
-
 .summary-card h2 {
     margin-bottom: 10px;
     font-size: 1.1rem;
@@ -2516,14 +2436,6 @@ label:focus-visible {
 
     .names-grid {
         grid-template-columns: minmax(0, 1fr);
-    }
-
-    .draft-add {
-        flex-direction: column;
-    }
-
-    .draft-add .btn {
-        width: 100%;
     }
 
     .role-card {
