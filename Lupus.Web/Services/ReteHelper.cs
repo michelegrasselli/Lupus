@@ -5,9 +5,11 @@ using System.Net.Sockets;
 namespace Lupus.Web.Services;
 
 /// <summary>
-/// Calcola l'indirizzo con cui i telefoni sulla stessa Wi-Fi possono
-/// raggiungere il server. Non conosce Blazor: legge solo configurazione e
-/// interfacce di rete.
+/// Calcola l'indirizzo di sola rete locale con cui i telefoni sulla stessa
+/// Wi-Fi possono raggiungere il server. Non conosce Blazor: legge solo
+/// configurazione e interfacce di rete. Il link principale per i telefoni è
+/// però quello costruito da <see cref="LinkAccesso"/> sull'origine della
+/// richiesta, così vale anche dietro Cloudflare Tunnel.
 /// </summary>
 public sealed class ReteHelper
 {
@@ -23,16 +25,24 @@ public sealed class ReteHelper
     {
         get
         {
-            var urls = _configurazione["Urls"];
+            // ASPNETCORE_URLS vince su appsettings.json: permette di spostare
+            // Kestrel (per esempio su 127.0.0.1) senza toccare il file.
+            var urls = _configurazione["ASPNETCORE_URLS"];
+            if (string.IsNullOrWhiteSpace(urls))
+                urls = _configurazione["Urls"];
             if (string.IsNullOrWhiteSpace(urls)) return 5092;
 
-            foreach (var voce in urls.Split(';', StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (Uri.TryCreate(voce.Trim(), UriKind.Absolute, out var uri) && uri.Port > 0)
-                    return uri.Port;
-            }
+            // Preferisce l'endpoint HTTP: con il profilo https
+            // ("https://localhost:7112;http://0.0.0.0:5092") i telefoni in LAN
+            // devono continuare a usare la porta in chiaro.
+            var endpoint = urls
+                .Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Select(voce => Uri.TryCreate(voce.Trim(), UriKind.Absolute, out var uri) ? uri : null)
+                .Where(uri => uri is { Port: > 0 })
+                .OrderBy(uri => string.Equals(uri!.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .FirstOrDefault();
 
-            return 5092;
+            return endpoint?.Port ?? 5092;
         }
     }
 

@@ -2,7 +2,7 @@
 @inject StanzeService Stanze
 @inject ArchivioPartita Archivio
 @inject ArchivioSessioni Sessioni
-@inject ReteHelper Rete
+@inject LinkAccesso Link
 @inject NavigationManager Nav
 
 <PageTitle>Lupus · Nuova stanza</PageTitle>
@@ -110,8 +110,12 @@
         }
 
         <p class="micro">
-            I telefoni devono essere sulla stessa Wi-Fi del narratore.
-            Indirizzo locale: <strong>@Rete.BaseUrl</strong>
+            Il link della lobby funziona da qualsiasi rete, anche in 4G.
+            @(Link.Pubblico ? "Link pubblico" : "Indirizzo"): <strong>@TestoAccesso</strong>
+            @if (Link.BaseLocale is { } locale)
+            {
+                <text> · sola rete locale: <strong>@locale</strong></text>
+            }
         </p>
     </div>
 
@@ -332,6 +336,12 @@
         CreazionePartita.Valida(numeroGiocatori, composizione, nomi.Select(n => n.Nome).ToList());
 
     private bool PuoiCreare => Errori.Count == 0;
+
+    /// <summary>
+    /// Indirizzo mostrato nella card di ingresso: su localhost non serve ai
+    /// telefoni, quindi mostra direttamente la base LAN.
+    /// </summary>
+    private string TestoAccesso => Link.DaLocalhost ? Link.BaseTelefoni : Link.BaseRichiesta;
 
     private string StatoComposizione =>
         numeroGiocatori == 0 && TotaleRuoli == 0

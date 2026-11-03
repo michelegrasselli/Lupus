@@ -6,7 +6,9 @@ File di contesto per chi lavora su questo repository. Leggilo prima di modificar
 
 Portare il vecchio narratore da terminale di **Lupus in Tabula** a un gioco web
 **multiplayer in tempo reale**: il narratore conduce la partita da un dispositivo, ogni
-giocatore entra dal proprio telefono sulla stessa Wi-Fi e vede solo ciò che gli spetta.
+giocatore entra dal proprio telefono e vede solo ciò che gli spetta. I telefoni possono
+stare sulla stessa Wi-Fi oppure usare il link pubblico HTTPS del tunnel: il gioco è lo
+stesso da qualsiasi rete.
 
 Stato attuale:
 
@@ -41,13 +43,21 @@ Esegui dalla root `C:\Users\miche\Desktop\PROGETTI_AI\Lupus`.
 # Build dell'intera soluzione
 dotnet build Lupus.slnx
 
-# Test del motore (harness console, 14 scenari)
+# Test del motore (harness console, 25 scenari)
 dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 
 # Avvio web (profilo HTTP, senza certificati)
 dotnet run --project Lupus.Web --launch-profile http
 # narratore: http://localhost:5092
-# telefoni:  http://<IP-del-PC>:5092
+# telefoni (LAN): http://<IP-del-PC>:5092
+
+# Tunnel: quick (URL casuale) poi eventualmente named tunnel
+cloudflared tunnel --url http://localhost:5092
+cloudflared tunnel run lupus
+
+# Kestrel solo loopback, se lo vuoi raggiungibile unicamente dal tunnel
+$env:ASPNETCORE_URLS = "http://127.0.0.1:5092"
+dotnet run --project Lupus.Web --no-launch-profile
 
 # Build del solo web
 dotnet build Lupus.Web/Lupus.Web.csproj
@@ -58,19 +68,45 @@ dotnet publish Lupus.Web/Lupus.Web.csproj -c Release
 ```
 
 > La porta 5092 e il binding `http://0.0.0.0:5092` sono in `appsettings.json` (`"Urls"`),
-> quindi valgono anche per l'exe pubblicato. `launchSettings.json` viene usato solo da
-> `dotnet run`/IDE. L'exe dentro `bin\Debug\net10.0` funziona anche lanciato direttamente
-> perché `Program.cs` abilita `StaticWebAssetsLoader` fuori da Development: senza quel
-> loader partirebbe in Production senza `wwwroot` e servirebbe CSS e `_framework` vuoti o
-> in errore (UI bianca e senza interattività). Per distribuire resta consigliato `publish`,
-> che include `wwwroot` e non dipende dai sorgenti.
+> quindi valgono anche per l'exe pubblicato. `ASPNETCORE_URLS` ha la precedenza su
+> `"Urls"`: serve a legare Kestrel al loopback quando lo raggiunge solo il tunnel.
+> `launchSettings.json` viene usato solo da `dotnet run`/IDE. L'exe dentro
+> `bin\Debug\net10.0` funziona anche lanciato direttamente perché `Program.cs` abilita
+> `StaticWebAssetsLoader` fuori da Development: senza quel loader partirebbe in Production
+> senza `wwwroot` e servirebbe CSS e `_framework` vuoti o in errore (UI bianca e senza
+> interattività). Per distribuire resta consigliato `publish`, che include `wwwroot` e non
+> dipende dai sorgenti.
 
-Se i telefoni non raggiungono il PC, apri la porta TCP 5092 nel firewall di Windows
-(profilo privato):
+Se i telefoni in Wi-Fi non raggiungono il PC, apri la porta TCP 5092 nel firewall di
+Windows (profilo privato). Con il tunnel **non serve**: `cloudflared` si collega in uscita
+e arriva a Kestrel su `localhost`.
 
 ```powershell
 New-NetFirewallRule -DisplayName "Lupus 5092" -Direction Inbound -Protocol TCP -LocalPort 5092 -Action Allow -Profile Private
 ```
+
+### Accesso pubblico (Cloudflare Tunnel)
+
+Il PC di casa resta acceso e `cloudflared` inoltra il traffico pubblico a Kestrel:
+
+```
+telefono (4G) ──https──▶ Cloudflare ──tunnel in uscita──▶ cloudflared (PC) ──▶ localhost:5092
+```
+
+- **Quick tunnel**: `cloudflared tunnel --url http://localhost:5092` → URL
+  `https://<casuale>.trycloudflare.com`, cambia a ogni riavvio del tunnel, nessun account.
+  Va bene anche per una serata, purché cloudflared resti acceso.
+- **Named tunnel**: dominio su Cloudflare + `cloudflared tunnel login/create/route dns` +
+  `config.yml` con `service: http://localhost:5092` + `cloudflared service install` per
+  l'avvio automatico con Windows. URL fisso.
+- `Program.cs` chiama `app.UseForwardedHeaders()` **prima** di ogni altro middleware e si
+  fida solo di `127.0.0.1`/`::1` (`KnownProxies`), quindi accetta `X-Forwarded-*` solo dal
+  proxy locale. Blazor vede `https` e l'host pubblico e `NavigationManager.BaseUri`
+  costruisce i link giusti.
+- `LinkAccesso` (scoped) usa `NavigationManager.BaseUri` per il **link pubblico** e
+  `ReteHelper` per il link **solo rete locale**, mostrato come secondario quando è diverso.
+- Requisiti: PC acceso, corrente e internet di casa. Se internet cade restano solo i link
+  LAN. Il piano gratuito Cloudflare non ha SLA.
 
 Il vecchio progetto console `Lupus/` resta compilabile e **non va modificato** salvo richiesta esplicita: serve come riferimento storico delle regole.
 
@@ -101,7 +137,7 @@ Lupus.slnx
 
 | File | Responsabilità |
 | --- | --- |
-| `Program.cs` | Registra Razor Components, `StanzeService` (singleton), `ReteHelper` (singleton), `ArchivioPartita`/`ArchivioSessioni` (scoped); static assets; interactive server. |
+| `Program.cs` | Registra Razor Components, `StanzeService` (singleton), `ReteHelper` (singleton), `LinkAccesso` (scoped), `ArchivioPartita`/`ArchivioSessioni` (scoped); `UseForwardedHeaders` per il tunnel; static assets; interactive server. |
 | `Components/App.razor` | HTML base italiano, `prerender: false`, CSS, script `lupus.js`. |
 | `Components/Pages/Home.razor` | Crea una stanza partendo da zero posti: numero di giocatori, composizione dei ruoli con +/−, nomi. Entra con codice, riprende le sessioni, importa un JSON. |
 | `Components/Pages/Entra.razor` | `/entra` e `/entra/{Codice}`: inserimento codice, elenco posti, reclamo del posto, rientro, "Dimentica". |
@@ -114,7 +150,8 @@ Lupus.slnx
 | `Services/Stanza.cs` | Stato stanza: posti/token, `Avviata`, voti, esiti, flag di rivelazione, quaderni privati. |
 | `Services/StanzeService.cs` | Registro singleton: creazione, join, transizioni, azioni, voti, pareggi, notifiche, pulizia 24h. |
 | `Services/StatoGiocatore.cs` | DTO e factory della vista giocatore: filtro privacy, azioni autorizzate, stato voto. |
-| `Services/ReteHelper.cs` | Rileva l'IPv4 LAN e costruisce gli URL `http://<ip>:5092/entra/<codice>`. |
+| `Services/ReteHelper.cs` | Rileva l'IPv4 LAN e costruisce gli URL `http://<ip>:5092/entra/<codice>` (fallback di rete locale). |
+| `Services/LinkAccesso.cs` | Costruisce il link da dare ai telefoni sull'origine della richiesta (`NavigationManager.BaseUri`): vale in LAN e dietro il tunnel. Espone anche il link di sola rete locale. |
 | `Services/ArchivioSessioni.cs` | Sessioni host/giocatore in `localStorage` (`lupus.sessioni.v1`). |
 | `Services/ArchivioPartita.cs` | Export/import JSON, download, conferma, copia negli appunti. |
 | `Services/Testi.cs` | Etichette italiane di fasi, vittorie e classi CSS. |
@@ -323,6 +360,12 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
   rete di sicurezza per l'exe lanciato da `bin/`: senza, `MapStaticAssets` non serve
   `app.css` né `_framework/blazor.web.js` e la UI resta senza stile e senza interattività.
 - Le pagine risolvono il token da query string e, se manca, da `ArchivioSessioni`.
+- `app.UseForwardedHeaders()` sta in cima a `Program.cs`: dietro Cloudflare Tunnel la
+  richiesta deve arrivare con schema `https` e host pubblico, altrimenti
+  `NavigationManager.BaseUri` produce link `http://localhost` inutilizzabili dai telefoni.
+  I proxy fidati sono solo `127.0.0.1` e `::1`: un `X-Forwarded-*` dalla LAN viene ignorato.
+- I link per i telefoni passano da `LinkAccesso` (mai comporre l'URL a mano): il primario è
+  l'origine della richiesta, il secondario è la LAN di `ReteHelper` e compare solo se diverso.
 - `Stanze.Ottieni` va richiamato a ogni aggiornamento: la stanza può essere stata chiusa o
   sostituita.
 - `Stanze.StatoDi`/`PostiPubblici`/`GiocatoreDi` prendono il lock del servizio: non leggere
@@ -400,7 +443,12 @@ giocatore (vedi checklist).
 ## 12. Limiti attuali
 
 - Le stanze vivono in memoria: un riavvio del server le cancella.
-- Nessuna autenticazione oltre al token: chi ha il link può reclamare un posto libero.
+- Nessuna autenticazione oltre al token: chi ha il link può reclamare un posto libero. Con
+  il tunnel il link è pubblico: trattalo come segreto della serata e chiudi la stanza dopo.
+- Il tunnel richiede PC acceso, corrente e internet di casa; se internet cade il link
+  pubblico muore e restano solo quelli LAN. Il piano gratuito Cloudflare non ha SLA.
+- Quick tunnel e named tunnel non sono gestiti dall'app: cloudflared è un processo esterno
+  (servizio Windows) e l'app non lo controlla.
 - Un browser ricorda un solo giocatore per stanza.
 - Il timer non conserva i secondi rimanenti tra reload.
 - Lo stato "ruolo già rivelato" nella modale non è persistito.
@@ -434,6 +482,8 @@ dotnet run --project Lupus.Web --launch-profile http
 Poi nel browser (narratore + almeno due schede giocatore):
 
 - Home → imposta numero giocatori, ruoli e nomi → "Crea la stanza" → codice e link visibili.
+- Nella lobby il link primario usa l'host da cui stai scrivendo: dietro tunnel è `https://dominio`, in LAN l'IP del PC.
+- Con `cloudflared tunnel --url http://localhost:5092` attivo, apri l'URL pubblico da un telefono in 4G e verifica che la lobby mostri quel dominio (non l'IP LAN).
 - Apri il link in due schede → reclama due posti → i telefoni sono in lobby senza ruolo.
 - "Avvia la partita" → ogni telefono vede il proprio ruolo.
 - "Inizia la notte" → il giocatore di turno agisce → il passo avanza per tutti.

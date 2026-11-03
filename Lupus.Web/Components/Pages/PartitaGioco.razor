@@ -3,7 +3,7 @@
 @inject StanzeService Stanze
 @inject ArchivioSessioni Sessioni
 @inject ArchivioPartita Archivio
-@inject ReteHelper Rete
+@inject LinkAccesso Link
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
@@ -120,11 +120,30 @@ else
                                 <strong class="join-code">@stanza.Codice</strong>
                             </div>
                             <div class="join-banner-url">
-                                <span class="join-label">Link per i telefoni</span>
+                                <span class="join-label">@EtichettaLink</span>
                                 <code>@JoinUrl</code>
                             </div>
                             <button type="button" class="btn btn-ghost btn-sm" @onclick="CopiaLink">Copia link</button>
+                            @if (JoinUrlLocale is { } linkLocaleLobby)
+                            {
+                                <div class="join-banner-url">
+                                    <span class="join-label">Solo rete locale</span>
+                                    <code>@linkLocaleLobby</code>
+                                </div>
+                                <button type="button" class="btn btn-ghost btn-sm" @onclick="CopiaLinkLocale">Copia locale</button>
+                            }
                         </div>
+
+                        <p class="micro">
+                            @if (Link.Pubblico)
+                            {
+                                <text>Il link pubblico funziona da qualsiasi rete: i telefoni possono usare il Wi-Fi di casa oppure i dati mobili.</text>
+                            }
+                            else
+                            {
+                                <text>Questo link vale per i telefoni sulla stessa rete. Per giocare da fuori casa serve il tunnel Cloudflare (vedi README).</text>
+                            }
+                        </p>
 
                         <div class="lobby-progress">
                             <span>@posti.Count(x => x.Occupato) / @posti.Count posti occupati</span>
@@ -733,11 +752,17 @@ else
                         <span class="pill">@stanza.Codice</span>
                     </div>
 
-                    <p class="muted small">Link per i telefoni</p>
+                    <p class="muted small">@EtichettaLink</p>
                     <code class="room-link">@JoinUrl</code>
 
                     <div class="room-actions">
                         <button type="button" class="btn btn-ghost btn-block btn-sm" @onclick="CopiaLink">Copia link</button>
+                        @if (JoinUrlLocale is { } linkLocale)
+                        {
+                            <p class="muted small">Solo rete locale</p>
+                            <code class="room-link">@linkLocale</code>
+                            <button type="button" class="btn btn-ghost btn-block btn-sm" @onclick="CopiaLinkLocale">Copia link locale</button>
+                        }
                         <button type="button" class="btn btn-ghost btn-block btn-sm" @onclick="Esporta">Esporta JSON</button>
                         <button type="button" class="btn btn-danger btn-block btn-sm" @onclick="ChiudiStanza">Chiudi stanza</button>
                     </div>
@@ -937,7 +962,11 @@ else
 
     private string TimerKey => $"{stanza?.Codice}-{P?.Turno}-{P?.Fase}-{timerReset}";
 
-    private string JoinUrl => stanza == null ? "" : Rete.UrlEntra(stanza.Codice);
+    private string JoinUrl => stanza == null ? "" : Link.Entra(stanza.Codice);
+
+    private string? JoinUrlLocale => stanza == null ? null : Link.EntraLocale(stanza.Codice);
+
+    private string EtichettaLink => Link.EtichettaPrincipale;
 
     private int PassiTotali => P?.PassiNotte.Count ?? 0;
 
@@ -1453,6 +1482,14 @@ else
     {
         var ok = await Archivio.CopiaAsync(JoinUrl);
         avviso = ok ? "Link copiato negli appunti." : "Copia non riuscita: seleziona il link manualmente.";
+    }
+
+    private async Task CopiaLinkLocale()
+    {
+        if (JoinUrlLocale is not { } locale) return;
+
+        var ok = await Archivio.CopiaAsync(locale);
+        avviso = ok ? "Link di rete locale copiato negli appunti." : "Copia non riuscita: seleziona il link manualmente.";
     }
 
     private async Task Esporta()

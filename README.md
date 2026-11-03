@@ -1,8 +1,8 @@
 # 🐺 Lupus in Tabula · Multiplayer
 
 Applicazione web per giocare a **Lupus in Tabula** con i telefoni: il narratore conduce
-la partita da un dispositivo, ogni giocatore entra dalla stessa Wi-Fi e vede solo il
-proprio ruolo, le proprie azioni notturne e il proprio voto.
+la partita da un dispositivo, ogni giocatore entra dal proprio telefono — anche da
+un'altra rete — e vede solo il proprio ruolo, le proprie azioni notturne e il proprio voto.
 
 Niente carta, niente appunti, niente account: la stanza vive sul server e si raggiunge
 con un codice a 5 lettere.
@@ -11,7 +11,8 @@ con un codice a 5 lettere.
 
 - [.NET SDK 10.0.200](https://dotnet.microsoft.com/) o superiore (target `net10.0`).
 - Un browser moderno su narratore e giocatori.
-- Telefoni e narratore collegati alla **stessa rete Wi-Fi**.
+- I telefoni possono stare sulla **stessa Wi-Fi** del narratore oppure usare il **link
+  pubblico** del tunnel: il gioco funziona anche in 4G.
 
 Nessun database, nessun account, nessun package NuGet esterno.
 
@@ -27,7 +28,91 @@ dotnet run --project Lupus.Web --launch-profile http
 L'app ascolta su `http://0.0.0.0:5092`:
 
 - narratore: <http://localhost:5092>
-- telefoni: `http://<IP-del-PC>:5092` (l'app mostra l'indirizzo corretto nella home)
+- telefoni, stessa Wi-Fi: `http://<IP-del-PC>:5092` (l'app mostra l'indirizzo corretto nella home)
+- telefoni, qualsiasi rete: l'URL `https://...` del tunnel, indicato come **Link pubblico**
+  nella lobby del narratore
+
+### Accesso pubblico con Cloudflare Tunnel
+
+L'app resta accesa sul PC di casa e `cloudflared` apre una connessione **in uscita** verso
+Cloudflare: non serve port forwarding, IP statico o porta aperta nel firewall. Cloudflare
+inoltra le richieste a Kestrel su `http://localhost:5092`.
+
+Requisiti: PC accesso, corrente elettrica e internet di casa attiva. Se internet cade, il
+tunnel si chiude e restano validi solo i link di rete locale.
+
+**Fase 1 · quick tunnel (prova veloce)**
+
+```powershell
+cloudflared tunnel --url http://localhost:5092
+```
+
+cloudflared stampa un URL `https://<parole-a-caso>.trycloudflare.com`. Non richiede account e
+può bastare anche per la serata della partita, **a patto di non riavviare cloudflared**:
+l'URL cambia solo quando il tunnel riparte. Per un indirizzo stabile nel tempo serve il
+named tunnel.
+
+Se non hai un dominio, il quick tunnel è la strada più rapida. Un dominio `.it`/`.com` costa
+circa 10 € all'anno e si sposta su Cloudflare gratis (cambiando i nameserver).
+
+**Fase 2 · named tunnel (URL fisso)**
+
+Serve un dominio gestito da Cloudflare. Una volta sola:
+
+```powershell
+cloudflared tunnel login
+cloudflared tunnel create lupus
+cloudflared tunnel route dns lupus lupus.<tuo-dominio>
+```
+
+Poi un file `%USERPROFILE%\.cloudflared\config.yml`:
+
+```yaml
+tunnel: lupus
+credentials-file: C:\Users\<utente>\.cloudflared\<id-tunnel>.json
+
+ingress:
+  - hostname: lupus.<tuo-dominio>
+    service: http://localhost:5092
+  - service: http_status:404
+```
+
+Avvio e installazione come servizio Windows (parte da solo all'accensione del PC):
+
+```powershell
+cloudflared tunnel run lupus                        # prova manuale
+cloudflared service install                          # servizio, usa config.yml
+sc.exe query cloudflared                             # stato del servizio
+```
+
+Con il named tunnel l'URL è sempre lo stesso; il link mostrato nella lobby usa da solo
+l'host pubblico (arriva da `NavigationManager.BaseUri`), quindi non va aggiornato a mano.
+
+**Cosa cambia tra i due**
+
+| | Quick tunnel | Named tunnel |
+| --- | --- | --- |
+| URL | casuale, cambia a ogni avvio | fisso sul tuo dominio |
+| Account Cloudflare | non serve | serve, con dominio |
+| Uso consigliato | prove e serata senza dominio | URL stabile nel tempo |
+| Limiti | cambia URL a ogni riavvio del tunnel | serve un dominio su Cloudflare |
+
+Il piano gratuito Cloudflare non ha costi per questo uso, ma non offre SLA: il tunnel può
+cadere se cade internet o se Cloudflare ha un disservizio. In quel caso chi è in casa può
+sempre usare il link di rete locale mostrato sotto quello pubblico.
+
+**Sovrascrivere la porta di Kestrel**
+
+`appsettings.json` imposta `"Urls": "http://0.0.0.0:5092"`. Per un uso solo-tunnel puoi
+legare Kestrel al loopback senza toccare il file:
+
+```powershell
+$env:ASPNETCORE_URLS = "http://127.0.0.1:5092"
+dotnet run --project Lupus.Web --no-launch-profile
+```
+
+`ASPNETCORE_URLS` vince su `"Urls"`; `dotnet run --launch-profile http` continua a usare
+`launchSettings.json` e resta il comando comodo per lo sviluppo in LAN.
 
 ### Eseguibile (publish)
 
@@ -50,12 +135,15 @@ Poi avvia:
 
 ### Firewall di Windows
 
-La prima volta Windows chiede di consentire l'app su reti private. Se i telefoni non
-raggiungono il PC, apri la porta TCP 5092 (PowerShell da amministratore):
+Se i telefoni in Wi-Fi non raggiungono il PC, apri la porta TCP 5092 (PowerShell da
+amministratore):
 
 ```powershell
 New-NetFirewallRule -DisplayName "Lupus 5092" -Direction Inbound -Protocol TCP -LocalPort 5092 -Action Allow -Profile Private
 ```
+
+Con Cloudflare Tunnel la regola **non serve**: `cloudflared` si collega in uscita e
+raggiunge Kestrel su `localhost`.
 
 ### Build e test
 
@@ -72,8 +160,9 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 1. **Crea la stanza** (`/`): imposta il numero di giocatori, la composizione dei ruoli e i
    nomi. Il server assegna subito i ruoli (mescolandoli), ma i telefoni non li vedono finché
    non avvii.
-2. **Fai entrare i giocatori**: mostra il link `http://<IP>:5092/entra/<CODICE>` o il
-   codice a 5 lettere. Ogni giocatore tocca il proprio nome e reclama il posto.
+2. **Fai entrare i giocatori**: mostra il **Link pubblico** della lobby (o il link di rete
+   locale se siete tutti sulla stessa Wi-Fi) e il codice a 5 lettere. Ogni giocatore tocca
+   il proprio nome e reclama il posto.
 3. **Avvia la partita** dal pannello del narratore: ogni telefono mostra il proprio ruolo.
 4. **Notte**: il motore genera i passi in ordine di priorità. Il giocatore di turno sceglie
    il bersaglio dal telefono; il narratore vede lo stato e può sempre agire al posto suo.
@@ -132,8 +221,9 @@ tempo reale tutti i dispositivi collegati.
 - Il browser ricorda host e giocatore in `localStorage` (`lupus.sessioni.v1`), così puoi
   riprendere dalla home. Un browser = una sessione giocatore per stanza.
 - Il timer non conserva i secondi rimanenti tra un reload: riparte dalla durata configurata.
-- Non c'è autenticazione: chi ha il link può reclamare un posto libero. Usa la rete locale
-  di casa e non esporre il server su Internet.
+- Non c'è autenticazione oltre ai token: chi ha il link può reclamare un posto libero. Con
+  il tunnel il link è raggiungibile da Internet, quindi trattalo come un segreto della
+  serata, non pubblicarlo e chiudi la stanza a fine partita.
 
 ## Documentazione
 
