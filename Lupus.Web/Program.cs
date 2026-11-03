@@ -35,6 +35,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddSingleton<StanzeService>();
+builder.Services.AddSingleton<GiocatoriAi>();
+builder.Services.AddHostedService<AiWorker>();
 builder.Services.AddSingleton<ReteHelper>();
 builder.Services.AddScoped<LinkAccesso>();
 builder.Services.AddScoped<ArchivioPartita>();

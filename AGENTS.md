@@ -17,6 +17,8 @@ Stato attuale:
   giocatore e decide quando rivelare i ruoli dei morti.
 - **Giocatori dal telefono**: ruolo privato, azioni notturne, voto
   del rogo e ballottaggio con conteggio in tempo reale.
+- **Giocatori AI**: posti affidati al server che giocano come persone (azioni notturne,
+  conferme, voto, ballottaggio) usando solo la vista filtrata del proprio ruolo.
 - **Nessun account, nessun database**: le stanze vivono in memoria sul server; la partita è
   esportabile/importabile come JSON.
 - **Motore separato**: `Lupus.Core` è una libreria pura, serializzabile, senza dipendenze da
@@ -33,7 +35,9 @@ Stato attuale:
 
 Il realtime usa i **circuiti Blazor Server** già esistenti: `StanzeService` è un singleton
 che tiene le stanze e i callback dei componenti; ogni transizione notifica tutti i circuiti
-iscritti alla stanza. Non c'è un secondo hub SignalR né un client JS separato.
+iscritti alla stanza. Non c'è un secondo hub SignalR né un client JS separato. I giocatori
+AI girano in un `BackgroundService` (`AiWorker`) che ogni secondo chiama
+`GiocatoriAi.TickAsync`: non dipendono da un browser aperto.
 
 ## 3. Comandi
 
@@ -137,9 +141,9 @@ Lupus.slnx
 
 | File | Responsabilità |
 | --- | --- |
-| `Program.cs` | Registra Razor Components, `StanzeService` (singleton), `ReteHelper` (singleton), `LinkAccesso` (scoped), `ArchivioPartita`/`ArchivioSessioni` (scoped); `UseForwardedHeaders` per il tunnel; static assets; interactive server. |
+| `Program.cs` | Registra Razor Components, `StanzeService` e `GiocatoriAi` (singleton), `AiWorker` (hosted service), `ReteHelper` (singleton), `LinkAccesso` (scoped), `ArchivioPartita`/`ArchivioSessioni` (scoped); `UseForwardedHeaders` per il tunnel; static assets; interactive server. |
 | `Components/App.razor` | HTML base italiano, `prerender: false`, CSS, script `lupus.js`. |
-| `Components/Pages/Home.razor` | Crea una stanza partendo da zero posti: numero di giocatori, composizione dei ruoli con +/−, nomi. Entra con codice, riprende le sessioni, importa un JSON. |
+| `Components/Pages/Home.razor` | Crea una stanza partendo da zero posti: numero di giocatori, composizione dei ruoli con +/−, nomi con toggle 👤/🤖. Entra con codice, riprende le sessioni, importa un JSON. |
 | `Components/Pages/Entra.razor` | `/entra` e `/entra/{Codice}`: inserimento codice, elenco posti, reclamo del posto, rientro, "Dimentica". |
 | `Components/Pages/Gioca.razor` | `/gioca/{Codice}?t=...`: lobby, ruolo privato, azioni notturne, alba, discussione, voto, ballottaggio, esecuzione, finale. |
 | `Components/Pages/PartitaGioco.razor` | `/partita/{Codice}?h=...`: dashboard narratore, lobby e link, passi notte, alba, voto live, ballottaggio, rogo, finale, diario, timer, rivelazioni, chiusura stanza. |
@@ -147,8 +151,9 @@ Lupus.slnx
 | `Components/Shared/PlayerTargetPicker.razor` | Griglia di selezione senza ruoli né colori di fazione: **per i giocatori**. |
 | `Components/Shared/VoteTally.razor` | Conteggio voti con barre, elettori e non votanti. |
 | `Components/Shared/TimerCountdown.razor` | Timer con preset, pausa/reset, beep a fine tempo, callback durata. |
-| `Services/Stanza.cs` | Stato stanza: posti/token, `Avviata`, voti, esiti, flag di rivelazione, quaderni privati. |
-| `Services/StanzeService.cs` | Registro singleton: creazione, join, transizioni, azioni, voti, pareggi, notifiche, pulizia 24h. |
+| `Services/Stanza.cs` | Stato stanza: posti/token, `Posto.IsAi`, `MemorieAi`, `Avviata`, voti, esiti, flag di rivelazione, quaderni privati. |
+| `Services/StanzeService.cs` | Registro singleton: creazione (anche con indici dei posti AI), join, transizioni, azioni, voti, pareggi, `RiempiConAiAsync`, notifiche, pulizia 24h. |
+| `Services/GiocatoriAi.cs` | Cervello dei bot + `AiWorker`: legge la vista filtrata, sceglie bersagli, conferma i risultati e vota con attese casuali. |
 | `Services/StatoGiocatore.cs` | DTO e factory della vista giocatore: filtro privacy, azioni autorizzate, stato voto. |
 | `Services/ReteHelper.cs` | Rileva l'IPv4 LAN e costruisce gli URL `http://<ip>:5092/entra/<codice>` (fallback di rete locale). |
 | `Services/LinkAccesso.cs` | Costruisce il link da dare ai telefoni sull'origine della richiesta (`NavigationManager.BaseUri`): vale in LAN e dietro il tunnel. Espone anche il link di sola rete locale. |
@@ -172,6 +177,10 @@ Lupus.slnx
 - `Posto.Token`: segreto del singolo giocatore, passato in query `?t=...` e salvato in `localStorage`.
 - `Stanza.Avviata`: finché è `false` i telefoni sono in lobby e **non** vedono il ruolo.
 - `Stanza.Posti`: un posto per ogni giocatore creato, con `GiocatoreId` stabile.
+- `Posto.IsAi`: il posto è giocato dal server. Il token esiste (il bot agisce con quello)
+  ma non viene mostrato a nessuno; il posto nasce già occupato.
+- `Stanza.MemorieAi`: memoria privata per giocatore AI (sospetti e indagati). Non passa mai
+  dalle viste dei giocatori.
 - I token sono opachi e non indovinabili (GUID `N`); non c'è autenticazione oltre al token.
 
 ### Ciclo di vita
@@ -179,14 +188,18 @@ Lupus.slnx
 1. `Home` → `StanzeService.Crea(...)` → `CreazionePartita.Crea(...)` (i ruoli vengono
    assegnati e mescolati) → stanza in `NotteIntro` con `Avviata = false`.
 2. I giocatori aprono `/entra/<codice>`, scelgono un posto libero → `UnisciAsync` genera il
-   token del posto.
+   token del posto. I posti AI (`postiAi` passato a `Crea`/`CreaDaPartita`, oppure
+   `RiempiConAiAsync` dalla lobby) nascono già occupati con un token che usa solo il server.
 3. Il narratore apre `/partita/<codice>?h=<hostToken>` e preme **Avvia la partita** →
    `AvviaAsync` imposta `Avviata = true`; i telefoni mostrano il ruolo.
 4. `IniziaNotteAsync` chiama `MotoreLupus.IniziaNotte` e azzera voti e flag di rivelazione.
+   Da qui `AiWorker` fa agire i posti AI con le stesse API dei telefoni.
 5. I giocatori eseguono i passi dal telefono (`EseguiPassoGiocatoreAsync`); il narratore può
-   sempre eseguirli al posto loro (`EseguiPassoNarratoreAsync`).
+   sempre eseguirli al posto loro (`EseguiPassoNarratoreAsync`). Gli AI usano lo stesso
+   metodo e confermano da soli i risultati informativi.
 6. `RisolviNotteAsync` → alba; `VaiAlGiornoAsync` → giorno; `ApriVotoAsync` → voto.
-7. I telefoni votano (`RegistraVotoAsync`), il narratore chiude (`ChiudiVotoAsync`).
+7. I telefoni e gli AI votano (`RegistraVotoAsync`, `RegistraVotoBallottaggioAsync`), il
+   narratore chiude (`ChiudiVotoAsync`/`ChiudiBallottaggioAsync`).
 8. In caso di pareggio al rogo si apre il **secondo voto** tra i più votati
    (`ApriBallottaggio`); se anche quello è in parità nessuno va al rogo (`SaltaRogo`).
    Se il Gufo ha aggiunto candidati si passa al ballottaggio (`ChiudiBallottaggioAsync`).
@@ -198,6 +211,11 @@ Lupus.slnx
 
 La vista giocatore è costruita **solo** da `StatoGiocatoreFactory.Crea`. Non passare mai
 direttamente `Partita` o `Giocatore` a `Gioca.razor`.
+
+Gli **AI** seguono la stessa regola: `GiocatoriAi` legge `StanzeService.StatoDi(...)` e usa
+solo `AzioneGiocatore`/`StatoVoto`. Non legge `Stanza.Partita` per decidere. La memoria del
+bot (`Stanza.MemorieAi`) nasce dai risultati delle proprie indagini e non viene mai
+serializzata verso i telefoni.
 
 - `StatoGiocatore.Ruolo`/`Info` sono `null` finché `Avviata == false`.
 - `GiocatorePubblico.Ruolo` è valorizzato solo per: il proprio ruolo, i morti se il narratore
@@ -317,11 +335,20 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 ## 8. UI e stato delle pagine
 
+### `Home.razor` (creazione stanza)
+
+- Numero giocatori, composizione dei ruoli e nomi.
+- Ogni riga dei nomi ha il toggle **👤 Umano / 🤖 AI**: gli indici dei posti AI vengono
+  passati a `Stanze.Crea(..., postiAi)`.
+- Il riepilogo mostra quanti posti sono umani e quanti AI.
+- Entra con codice, riprende le sessioni, importa un JSON.
+
 ### `PartitaGioco.razor` (narratore)
 
 - **Header**: codice stanza, fase, conteggi, rivela/nascondi ruoli, esporta, chiudi.
 - **Timeline** delle fasi con stato `done/current/todo`.
-- **Lobby**: link per i telefoni, posti occupati, "Libera" per un posto, "Avvia la partita".
+- **Lobby**: link per i telefoni, posti occupati, "Libera" per un posto, "RiempiConAi" con
+  **🤖 AI** su un posto libero, "Rendi umano" per un posto AI, "Avvia la partita".
 - **Notte**: passo corrente, picker con ruoli, risultato con conferma, log dei passi,
   "Risolvi la notte" quando `NotteCompleta`.
 - **Alba**: eventi pubblici, caduti, gufati, eventi riservati, interruttore "Rivela i ruoli dei caduti".
@@ -332,8 +359,8 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 - **Esecuzione**: ultimo rogo (o "Nessuno va al rogo"), interruttore "Rivela il ruolo del
   condannato" solo se c'è un condannato, "Cala la notte".
 - **Finita**: vincitore e riepilogo ruoli.
-- **Sidebar**: timer, elenco giocatori con stato connessione (`📱`) e reveal, stanza/link,
-  diario filtrabile.
+- **Sidebar**: timer, elenco giocatori con stato (`🤖` AI, `📱` telefono collegato) e reveal,
+  stanza/link, diario filtrabile.
 - **Modale ruoli**: reveal uno alla volta (`ruoliRivelati`, non persistito).
 
 ### `Gioca.razor` (giocatore)
@@ -386,7 +413,8 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
   giocatore per stanza**: l'ultimo posto reclamato sovrascrive il precedente.
 - Export: `ArchivioPartita.ScaricaAsync` → `lupus-yyyyMMdd-HHmm.json`.
 - Import: `Serializzazione.Deserializza` → `Stanze.CreaDaPartita(partita, avviata)`; se la
-  partita non è in `NotteIntro` la stanza nasce già avviata e i posti sono liberi.
+  partita non è in `NotteIntro` la stanza nasce già avviata e i posti sono liberi. I posti
+  AI non vengono conservati: vanno riassegnati dalla lobby.
 - `Partita.Normalizza()` ripara liste null dopo un import.
 - `Partita.Versione` è pensato per migrazioni future.
 - **Le stanze non sono persistite**: un riavvio del server le perde. `Pulizia()` rimuove le
@@ -425,7 +453,9 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 
 La UI multiplayer non ha test automatici: la verifica è manuale con narratore + più schede
-giocatore (vedi checklist).
+giocatore (vedi checklist). Per gli AI basta una stanza tutta artificiale (o mista): dopo
+"Inizia la notte" i passi devono chiudersi da soli e, aperto il voto, il tally deve
+arrivare a `X / X hanno votato` senza toccare i telefoni.
 
 ## 11. Convenzioni
 
@@ -451,6 +481,8 @@ giocatore (vedi checklist).
   (servizio Windows) e l'app non lo controlla.
 - Un browser ricorda un solo giocatore per stanza.
 - Il timer non conserva i secondi rimanenti tra reload.
+- I posti AI non sono salvati nell'export JSON e non vengono ricreati dall'import.
+- Gli AI non hanno una chat: discutono solo con il voto e con le informazioni del ruolo.
 - Lo stato "ruolo già rivelato" nella modale non è persistito.
 - Nessun test UI automatizzato.
 - Il rilevamento dell'IP LAN preferisce Wi-Fi/Ethernet reali e penalizza gli adattatori
@@ -467,6 +499,8 @@ giocatore (vedi checklist).
 4. **Test di integrazione** per autorizzazione, privacy e viste filtrate.
 5. **Notifiche** (vibrazione/beep) quando il telefono deve agire o quando si apre il voto.
 6. **Eliminare** `PartitaService` e i riferimenti al vecchio flusso narratore-only.
+7. **AI più sveglie**: memoria condivisa del branco, valutazione dei voti precedenti e
+   personalità diverse (aggressivo/prudente) senza toccare il motore.
 
 Il motore è già serializzabile e senza stato globale: queste aggiunte non richiedono di
 riscrivere le regole.
@@ -482,6 +516,9 @@ dotnet run --project Lupus.Web --launch-profile http
 Poi nel browser (narratore + almeno due schede giocatore):
 
 - Home → imposta numero giocatori, ruoli e nomi → "Crea la stanza" → codice e link visibili.
+- Metti almeno due righe su 🤖 AI e verifica che in lobby i posti siano già occupati e marcati AI; prova anche "RiempiConAi" su un posto libero e "Rendi umano".
+- In una stanza con AI, "Avvia la partita" → "Inizia la notte" → i passi degli AI si chiudono da soli (2–5 s ciascuno); la Veggente AI conferma il risultato senza intervento.
+- "Apri il voto" → i voti degli AI arrivano da soli fino a `X / X hanno votato`.
 - Nella lobby il link primario usa l'host da cui stai scrivendo: dietro tunnel è `https://dominio`, in LAN l'IP del PC.
 - Con `cloudflared tunnel --url http://localhost:5092` attivo, apri l'URL pubblico da un telefono in 4G e verifica che la lobby mostri quel dominio (non l'IP LAN).
 - Apri il link in due schede → reclama due posti → i telefoni sono in lobby senza ruolo.

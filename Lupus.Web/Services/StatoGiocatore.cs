@@ -73,7 +73,8 @@ public sealed record AzioneGiocatore(
     bool Saltato,
     string? Risultato,
     IReadOnlyList<GiocatorePubblico> Opzioni,
-    bool PuoAgire);
+    bool PuoAgire,
+    Potere Potere);
 
 public sealed record ConteggioVoto(string Id, string Nome, int Voti, IReadOnlyList<string> Elettori);
 
@@ -198,7 +199,8 @@ public static class StatoGiocatoreFactory
                     passo.Saltato,
                     passo.Risultato,
                     opzioni,
-                    !passo.Completato && corrente?.Id == passo.Id));
+                    !passo.Completato && corrente?.Id == passo.Id,
+                    passo.Potere));
             }
         }
 

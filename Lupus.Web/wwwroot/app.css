@@ -806,6 +806,36 @@ label:focus-visible {
     color: var(--muted-2);
 }
 
+.name-field.is-ai {
+    border-color: rgba(139, 124, 246, 0.45);
+    background: rgba(139, 124, 246, 0.09);
+}
+
+.ai-toggle {
+    flex-shrink: 0;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.ai-toggle:hover {
+    border-color: rgba(139, 124, 246, 0.55);
+    color: var(--text);
+}
+
+.ai-toggle.on {
+    border-color: rgba(139, 124, 246, 0.6);
+    background: rgba(139, 124, 246, 0.2);
+    color: #d9d3ff;
+}
+
 .toggle {
     display: flex;
     align-items: center;
@@ -2832,6 +2862,23 @@ h1:focus {
 .lobby-seat.ready {
     border-color: rgba(74, 222, 128, 0.35);
     background: rgba(74, 222, 128, 0.06);
+}
+
+.lobby-seat.ai {
+    border-color: rgba(139, 124, 246, 0.45);
+    background: rgba(139, 124, 246, 0.08);
+}
+
+.ai-badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(139, 124, 246, 0.22);
+    color: #d9d3ff;
+    font-size: 0.62rem;
+    font-weight: 700;
+    vertical-align: middle;
 }
 
 .lobby-seat-body {

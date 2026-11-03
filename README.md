@@ -159,11 +159,14 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 
 1. **Crea la stanza** (`/`): imposta il numero di giocatori, la composizione dei ruoli e i
    nomi. Il server assegna subito i ruoli (mescolandoli), ma i telefoni non li vedono finché
-   non avvii.
+   non avvii. Ogni riga dei nomi ha un pulsante **👤 Umano / 🤖 AI**: se al tavolo siete in
+   tre ma volete giocare in cinque, lasciate due posti all'AI. Puoi aggiungere AI anche
+   dalla lobby, con **🤖 AI** sui posti liberi.
 2. **Fai entrare i giocatori**: mostra il **Link pubblico** della lobby (o il link di rete
    locale se siete tutti sulla stessa Wi-Fi) e il codice a 5 lettere. Ogni giocatore tocca
-   il proprio nome e reclama il posto.
-3. **Avvia la partita** dal pannello del narratore: ogni telefono mostra il proprio ruolo.
+   il proprio nome e reclama il posto. I posti AI nascono già occupati e non vanno reclamati.
+3. **Avvia la partita** dal pannello del narratore: ogni telefono mostra il proprio ruolo;
+   anche gli AI ricevono il loro, ma restano sul server.
 4. **Notte**: il motore genera i passi in ordine di priorità. Il giocatore di turno sceglie
    il bersaglio dal telefono; il narratore vede lo stato e può sempre agire al posto suo.
 5. **Alba**: eventi pubblici e caduti. Il narratore decide se rivelare ai telefoni i ruoli
@@ -185,12 +188,31 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 - Lo **stato pubblico**: vivi, morti, eventi dell'alba, candidati al ballottaggio.
 - Mai i ruoli degli altri giocatori vivi.
 
+### Giocatori AI
+
+Un posto AI è affidato al server: agisce, conferma i risultati e vota al rogo come un
+giocatore umano, con attese casuali di qualche secondo per non sembrare un pulsante
+automatico. Non vede la partita grezza: legge la stessa vista filtrata del telefono
+(`StatoGiocatoreFactory`), quindi conosce solo il proprio ruolo, i compagni di branco e i
+risultati delle proprie indagini. Se il branco ha almeno un lupo umano, la scelta della
+preda spetta agli umani; gli AI lupi intervengono solo in un branco tutto artificiale.
+
+I posti AI si impostano in due modi:
+
+- nella **Home**, con il pulsante per riga accanto al nome;
+- nella **lobby**, con **🤖 AI** su un posto ancora libero.
+
+Prima di avviare puoi sempre riportare un posto AI a umano con **Rendi umano** (in Home
+basta premere di nuovo il pulsante della riga). Dopo l'avvio i ruoli sono già distribuiti.
+
 ## Funzionalità
 
 - **18 ruoli** con composizione scelta dal narratore (contatori +/−) e nomi personalizzati.
 - **Macchina a stati** esplicita: `NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzione → …`
 - **Stanze in memoria** con codice a 5 lettere, posti reclamabili e token per dispositivo.
 - **Azioni notturne dal telefono**, con fallback del narratore.
+- **Giocatori AI** che giocano come persone: scelgono di notte, confermano i risultati e
+  votano al rogo, con memoria privata delle proprie indagini.
 - **Voto del rogo e ballottaggio in tempo reale**, con conteggio e gestione dei pareggi
   (secondo voto tra i più votati, altrimenti nessuno al rogo).
 - **Diario di gioco** filtrabile, con eventi riservati al narratore.
@@ -211,7 +233,9 @@ Lupus.slnx
 
 Il motore (`Lupus.Core`) non conosce Blazor, JavaScript, localStorage o HTTP. Le stanze
 (`Lupus.Web/Services/StanzeService.cs`) usano i circuiti Blazor Server per notificare in
-tempo reale tutti i dispositivi collegati.
+tempo reale tutti i dispositivi collegati. I giocatori AI
+(`Lupus.Web/Services/GiocatoriAi.cs`) sono un `BackgroundService` che ogni secondo fa
+muovere i posti artificiali usando le stesse API dei telefoni.
 
 ## Persistenza e limiti
 
@@ -221,6 +245,8 @@ tempo reale tutti i dispositivi collegati.
 - Il browser ricorda host e giocatore in `localStorage` (`lupus.sessioni.v1`), così puoi
   riprendere dalla home. Un browser = una sessione giocatore per stanza.
 - Il timer non conserva i secondi rimanenti tra un reload: riparte dalla durata configurata.
+- L'import di un JSON non conserva i posti AI: la stanza importata nasce con tutti i posti
+  liberi, da riassegnare dalla lobby.
 - Non c'è autenticazione oltre ai token: chi ha il link può reclamare un posto libero. Con
   il tunnel il link è raggiungibile da Internet, quindi trattalo come un segreto della
   serata, non pubblicarlo e chiudi la stanza a fine partita.

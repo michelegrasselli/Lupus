@@ -24,10 +24,11 @@ public sealed class StanzeService
     public (Stanza Stanza, string HostToken) Crea(
         IReadOnlyList<string> nomi,
         IReadOnlyDictionary<Ruolo, int> composizione,
-        bool assegnaCasualmente = true)
+        bool assegnaCasualmente = true,
+        IReadOnlyCollection<int>? postiAi = null)
     {
         var partita = CreazionePartita.Crea(nomi, composizione, assegnaCasualmente);
-        return CreaDaPartita(partita, avviata: false);
+        return CreaDaPartita(partita, avviata: false, postiAi);
     }
 
     /// <summary>
@@ -43,8 +44,13 @@ public sealed class StanzeService
 
     /// <summary>
     /// Crea una stanza da una partita già esistente (import JSON o ripresa).
+    /// <paramref name="postiAi"/> elenca gli indici dei giocatori (nell'ordine
+    /// della partita) che devono essere giocati dal server.
     /// </summary>
-    public (Stanza Stanza, string HostToken) CreaDaPartita(Partita partita, bool avviata)
+    public (Stanza Stanza, string HostToken) CreaDaPartita(
+        Partita partita,
+        bool avviata,
+        IReadOnlyCollection<int>? postiAi = null)
     {
         partita.Normalizza();
 
@@ -72,15 +78,42 @@ public sealed class StanzeService
                 Avviata = avviata
             };
 
-            stanza.Posti.AddRange(partita.Giocatori.Select(g => new Posto
+            var indice = 0;
+            foreach (var giocatore in partita.Giocatori)
             {
-                GiocatoreId = g.Id
-            }));
+                var ai = postiAi?.Contains(indice) == true;
+
+                // Un posto AI nasce già occupato: nessun telefono deve
+                // reclamarlo, e il server usa il token per agire al suo posto.
+                stanza.Posti.Add(new Posto
+                {
+                    GiocatoreId = giocatore.Id,
+                    IsAi = ai,
+                    Token = ai ? Guid.NewGuid().ToString("N") : null,
+                    UltimoAccesso = ai ? DateTime.Now : null
+                });
+
+                indice++;
+            }
 
             _stanze[codice] = stanza;
             _sottoscrittori[codice] = new List<Func<Task>>();
 
             return (stanza, stanza.HostToken);
+        }
+    }
+
+    /// <summary>
+    /// Copia delle stanze attive, usata dal giro di gioco dei giocatori AI.
+    /// Il lock è preso solo per copiare l'elenco: chi consuma la lista lavora
+    /// poi sulle singole stanze tramite i metodi pubblici del servizio.
+    /// </summary>
+    public IReadOnlyList<Stanza> Stanze()
+    {
+        lock (_lock)
+        {
+            Pulizia();
+            return _stanze.Values.ToList();
         }
     }
 
@@ -133,8 +166,24 @@ public sealed class StanzeService
                         posto.GiocatoreId,
                         giocatore?.Nome ?? "?",
                         giocatore?.Iniziali ?? "?",
-                        posto.Occupato);
+                        posto.Occupato,
+                        posto.IsAi);
                 })
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Posti affidati al server, con il token che il giro degli AI usa per
+    /// agire esattamente come farebbe un telefono.
+    /// </summary>
+    public IReadOnlyList<(string Token, string GiocatoreId)> PostiAi(Stanza stanza)
+    {
+        lock (_lock)
+        {
+            return stanza.Posti
+                .Where(p => p.IsAi && p.Occupato)
+                .Select(p => (p.Token!, p.GiocatoreId))
                 .ToList();
         }
     }
@@ -198,6 +247,42 @@ public sealed class StanzeService
 
             posto.Token = null;
             posto.UltimoAccesso = null;
+            posto.IsAi = false;
+            stanza.UltimoAggiornamento = DateTime.Now;
+        }
+
+        await NotificaAsync(stanza.Codice);
+        return EsitoPasso.Successo();
+    }
+
+    /// <summary>
+    /// Affida un posto ancora libero a un giocatore AI: la stanza lo tratta
+    /// come occupato e il server gioca al suo posto. Si può fare solo in lobby,
+    /// prima dell'avvio: dopo i ruoli sono già stati distribuiti.
+    /// </summary>
+    public async Task<EsitoPasso> RiempiConAiAsync(Stanza stanza, string hostToken, string giocatoreId)
+    {
+        if (!ValidaHost(stanza, hostToken))
+            return EsitoPasso.Fallito("Token narratore non valido.");
+
+        lock (_lock)
+        {
+            if (stanza.Avviata)
+                return EsitoPasso.Fallito("Aggiungi i giocatori AI prima di avviare la partita.");
+
+            var posto = stanza.PostoDi(giocatoreId);
+            if (posto == null)
+                return EsitoPasso.Fallito("Posto non trovato.");
+            if (posto.Occupato)
+                return EsitoPasso.Fallito("Questo posto è già occupato.");
+
+            posto.IsAi = true;
+            posto.Token = Guid.NewGuid().ToString("N");
+            posto.UltimoAccesso = DateTime.Now;
+
+            stanza.Partita.AggiungiLog(
+                $"Il posto di {stanza.Partita.NomeDi(giocatoreId)} è ora un giocatore AI.",
+                TipoLog.Configurazione);
             stanza.UltimoAggiornamento = DateTime.Now;
         }
 
@@ -1002,7 +1087,7 @@ public sealed class StanzeService
     }
 }
 
-public sealed record PostoStanza(string GiocatoreId, string Nome, string Iniziali, bool Occupato);
+public sealed record PostoStanza(string GiocatoreId, string Nome, string Iniziali, bool Occupato, bool Ai = false);
 
 public sealed class RisultatoChiusura
 {

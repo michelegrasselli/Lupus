@@ -192,7 +192,10 @@
                         <span class="step-number">3</span>
                         <div>
                             <h2>Nomi dei giocatori</h2>
-                            <p class="muted">I nomi devono essere unici. Ogni nome diventa un posto da reclamare.</p>
+                            <p class="muted">
+                                I nomi devono essere unici. Ogni nome diventa un posto da reclamare.
+                                Con il pulsante a destra decidi se il posto lo gioca una persona o l'AI.
+                            </p>
                         </div>
                     </div>
                     <div class="head-actions">
@@ -213,12 +216,24 @@
                         @for (int i = 0; i < nomi.Count; i++)
                         {
                             var entry = nomi[i];
-                            <label class="name-field" @key="entry">
+                            <div class="name-field @(entry.IsAi ? "is-ai" : "")" @key="entry">
                                 <span>@(i + 1)</span>
                                 <input @bind="entry.Nome" placeholder="Nome giocatore" maxlength="24" autocomplete="off" />
-                            </label>
+                                <button type="button"
+                                        class="ai-toggle @(entry.IsAi ? "on" : "")"
+                                        @onclick="() => ToggleAi(entry)"
+                                        title="@(entry.IsAi ? "Posto giocato dall'AI: premi per renderlo umano." : "Posto per una persona: premi per affidarlo all'AI.")">
+                                    @(entry.IsAi ? "🤖 AI" : "👤 Umano")
+                                </button>
+                            </div>
                         }
                     </div>
+
+                    <p class="micro">
+                        @NumeroUmani @(NumeroUmani == 1 ? "posto umano" : "posti umani") ·
+                        @NumeroAi AI. Gli AI ricevono solo le informazioni del proprio ruolo:
+                        scelgono di notte e votano al rogo come tutti gli altri.
+                    </p>
                 }
 
                 <label class="toggle">
@@ -233,6 +248,8 @@
                 <h2>Riepilogo</h2>
 
                 <div class="summary-row"><span>Giocatori</span><strong>@numeroGiocatori</strong></div>
+                <div class="summary-row"><span>Umani</span><strong>@NumeroUmani</strong></div>
+                <div class="summary-row"><span>AI</span><strong>@NumeroAi</strong></div>
                 <div class="summary-row"><span>Ruoli scelti</span><strong>@TotaleRuoli</strong></div>
                 <div class="summary-row"><span>Lupi</span><strong class="evil">@Lupi</strong></div>
                 <div class="summary-row"><span>Non lupi</span><strong class="good">@Altri</strong></div>
@@ -314,6 +331,7 @@
     private sealed class NomeEntry
     {
         public string Nome { get; set; } = "";
+        public bool IsAi { get; set; }
     }
 
     private int numeroGiocatori;
@@ -329,6 +347,8 @@
     private int TotaleRuoli => composizione.Values.Sum();
     private int Lupi => Quantita(Ruolo.Lupo);
     private int Altri => TotaleRuoli - Lupi;
+    private int NumeroAi => nomi.Count(n => n.IsAi);
+    private int NumeroUmani => nomi.Count(n => !n.IsAi);
     private int PercentualeLupi => TotaleRuoli == 0 ? 0 : (int)Math.Round(100.0 * Lupi / TotaleRuoli);
     private bool PuoiEntrare => codiceIngresso.Trim().Length >= 4;
 
@@ -415,6 +435,12 @@
             entry.Nome = "";
     }
 
+    private void ToggleAi(NomeEntry entry)
+    {
+        entry.IsAi = !entry.IsAi;
+        errore = null;
+    }
+
     private async Task CreaStanza()
     {
         errore = null;
@@ -427,10 +453,17 @@
 
         try
         {
+            var postiAi = nomi
+                .Select((entry, indice) => (entry, indice))
+                .Where(x => x.entry.IsAi)
+                .Select(x => x.indice)
+                .ToList();
+
             var (stanza, hostToken) = Stanze.Crea(
                 nomi.Select(n => n.Nome.Trim()).ToList(),
                 composizione,
-                assegnaCasualmente);
+                assegnaCasualmente,
+                postiAi);
 
             await Sessioni.SalvaAsync(new SessioneBrowser
             {

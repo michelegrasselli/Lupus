@@ -112,14 +112,18 @@
                             class="seat-card @(posto.Occupato ? "occupied" : "free")"
                             disabled="@(posto.Occupato || stanza.Partita.Fase == FasePartita.Finita || operazioneInCorso)"
                             @onclick="() => Reclama(posto)">
-                        <span class="avatar">@posto.Iniziali</span>
+                        <span class="avatar">@(posto.Ai ? "🤖" : posto.Iniziali)</span>
                         <span class="seat-body">
                             <span class="seat-name">@posto.Nome</span>
-                            <span class="seat-state">@(posto.Occupato ? "già entrato" : "libero · tocca per entrare")</span>
+                            <span class="seat-state">
+                                @if (posto.Ai) { <text>gioca l'AI</text> }
+                                else if (posto.Occupato) { <text>già entrato</text> }
+                                else { <text>libero · tocca per entrare</text> }
+                            </span>
                         </span>
                         @if (posto.Occupato)
                         {
-                            <span class="seat-badge">✓</span>
+                            <span class="seat-badge">@(posto.Ai ? "🤖" : "✓")</span>
                         }
                     </button>
                 }

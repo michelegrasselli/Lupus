@@ -15,6 +15,13 @@ public sealed class Stanza
     public List<Posto> Posti { get; init; } = new();
 
     /// <summary>
+    /// Quello che un giocatore AI ha imparato con il proprio ruolo (per ora:
+    /// chi ha indagato e chi ritiene cattivo). È privato per costruzione: lo
+    /// legge solo <see cref="GiocatoriAi"/>, mai le viste dei giocatori.
+    /// </summary>
+    public Dictionary<string, MemoriaAi> MemorieAi { get; } = new();
+
+    /// <summary>
     /// Finché è false i giocatori sono nella lobby e non vedono il proprio
     /// ruolo. Il narratore lo imposta a true quando la compagnia è pronta.
     /// </summary>
@@ -157,5 +164,24 @@ public sealed class Posto
     public string? Token { get; set; }
     public DateTime? UltimoAccesso { get; set; }
 
+    /// <summary>
+    /// Il posto è affidato a un giocatore AI: il token esiste ma non viene
+    /// mostrato a nessuno, perché è il server a giocare al posto suo.
+    /// </summary>
+    public bool IsAi { get; set; }
+
     public bool Occupato => !string.IsNullOrWhiteSpace(Token);
+}
+
+/// <summary>
+/// Informazioni che un giocatore AI ha ottenuto tramite il proprio ruolo.
+/// Restano nella stanza e non vengono mai serializzate verso i telefoni.
+/// </summary>
+public sealed class MemoriaAi
+{
+    /// <summary>Giocatori che una Veggente/Becchino AI ritiene CATTIVI.</summary>
+    public HashSet<string> Sospetti { get; } = new();
+
+    /// <summary>Giocatori già indagati: evita di sprecare altre notti.</summary>
+    public HashSet<string> Investigati { get; } = new();
 }
