@@ -151,7 +151,7 @@ raggiunge Kestrel su `localhost`.
 # Build dell'intera soluzione
 dotnet build Lupus.slnx
 
-# Test del motore di gioco (25 scenari)
+# Test del motore di gioco (26 scenari)
 dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 ```
 
@@ -174,9 +174,10 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 6. **Giorno / Voto**: il villaggio discute con il timer. Se al tavolo c'è almeno un AI,
    nella fase di giorno compare anche **la piazza**: gli AI commentano da soli, gli umani
    possono fare domande o raccontare informazioni, e gli AI decidono se fidarsi. Poi il voto
-   si raccoglie dai telefoni con conteggio in tempo reale. In caso di pareggio si vota di
-   nuovo solo tra i più votati; se resta il pareggio nessuno va al rogo. Il narratore può
-   forzare o saltare il rogo.
+   si raccoglie dai telefoni con conteggio in tempo reale: **si può votare chiunque sia
+   vivo**, anche se stessi e anche i propri compagni di branco, così la lista dei votabili
+   non racconta nulla sulle alleanze. In caso di pareggio si vota di nuovo solo tra i più
+   votati; se resta il pareggio nessuno va al rogo. Il narratore può forzare o saltare il rogo.
 7. **Ballottaggio**: se il Gufo ha aggiunto candidati, i telefoni votano tra loro; anche qui
    un pareggio significa nessun rogo.
 8. **Esecuzione**: il narratore annuncia il ruolo del condannato (se c'è) e cala la notte.
@@ -199,6 +200,8 @@ automatico. Non vede la partita grezza: legge la stessa vista filtrata del telef
 (`StatoGiocatoreFactory`), quindi conosce solo il proprio ruolo, i compagni di branco e i
 risultati delle proprie indagini. Se il branco ha almeno un lupo umano, la scelta della
 preda spetta agli umani; gli AI lupi intervengono solo in un branco tutto artificiale.
+Al voto gli AI lupi di solito risparmiano i compagni, ma a volte ne votano uno per sembrare
+puliti: se non lo facessero mai, il tally direbbe al villaggio chi è nel branco.
 
 I posti AI si impostano in due modi:
 
@@ -215,8 +218,8 @@ piazza** sul telefono dei giocatori e nel pannello del narratore. Negli altri ca
 non c'è e si passa direttamente al voto.
 
 - Gli AI **commentano di loro iniziativa** (al massimo due volte per turno), con frasi
-  generiche, accuse, difese o piccoli bluff. Un lupo AI mente più spesso e non attacca i
-  compagni di branco.
+  generiche, accuse, difese o piccoli bluff. Un lupo AI mente più spesso, di solito non
+  attacca i compagni di branco ma ogni tanto lo fa per non essere scoperto.
 - Un umano può scegliere **Tutti** per parlare alla piazza, oppure un AI dal menu **Chiedi
   a**: in quel caso il messaggio è una domanda. L'AI risponde oppure **rifiuta** con una
   motivazione, per esempio "Preferisco non espormi per ora.".
@@ -252,7 +255,7 @@ non c'è e si passa direttamente al voto.
 Lupus.slnx
 ├── Lupus/              # vecchia app console (riferimento storico, invariata)
 ├── Lupus.Core/         # motore di gioco puro e serializzabile
-├── Lupus.Core.Tests/   # harness console con 25 scenari di regole
+├── Lupus.Core.Tests/   # harness console con 26 scenari di regole
 └── Lupus.Web/          # Blazor Server, UI italiana, stanze multiplayer
 ```
 

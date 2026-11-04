@@ -745,8 +745,6 @@ public sealed class StanzeService
             var bersaglio = p.Giocatore(bersaglioId);
             if (bersaglio == null || !bersaglio.Vivo)
                 return EsitoPasso.Fallito("Scegli un giocatore vivo.");
-            if (bersaglio.Id == giocatore.Id)
-                return EsitoPasso.Fallito("Non puoi votare per te stesso.");
 
             stanza.RegistraVoto(giocatore.Id, bersaglio.Id);
             stanza.UltimoAggiornamento = DateTime.Now;
@@ -910,8 +908,6 @@ public sealed class StanzeService
             var bersaglio = p.Giocatore(bersaglioId);
             if (bersaglio == null || !bersaglio.Vivo)
                 return EsitoPasso.Fallito("Il candidato non è più in vita.");
-            if (bersaglio.Id == giocatore.Id)
-                return EsitoPasso.Fallito("Non puoi votare per te stesso.");
 
             stanza.RegistraVotoBallottaggio(giocatore.Id, bersaglio.Id);
             stanza.UltimoAggiornamento = DateTime.Now;

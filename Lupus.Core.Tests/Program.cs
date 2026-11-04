@@ -16,6 +16,7 @@ var tests = new (string Nome, Action Test)[]
     ("Copione: copia il ruolo", Copione),
     ("Copione: può puntare un altro Copione", CopioniSiPuntano),
     ("Copione: copia un Copione che ha già copiato", CopioneCopiaCopioneTrasformato),
+    ("Copione: due Veggenti si svegliano insieme", DueVeggenti),
     ("Ruoli morti: vengono comunque chiamati", RuoliMortiChiamati),
     ("Gufo: ballottaggio", GufoBallottaggio),
     ("Rogo: pareggio e secondo voto", PareggioAlRogo),
@@ -422,6 +423,46 @@ static void CopioneCopiaCopioneTrasformato()
         "Il Copione 2 doveva diventare Veggente.");
     Require(G(p, "Copione2").Trasformato,
         "Il Copione 2 doveva risultare trasformato.");
+}
+
+static void DueVeggenti()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Copione", Ruolo.Copione),
+        ("Veggente", Ruolo.Veggente),
+        ("Guardiano", Ruolo.Guardiano),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino),
+        ("Carla", Ruolo.Contadino));
+
+    // Prima notte: il Copione copia la Veggente.
+    Notte(p);
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Bruno"),
+        Potere.Copione => Nome(p, "Veggente"),
+        Potere.Veggente => Nome(p, "Lupo"),
+        Potere.Guardiano => Nome(p, "Anna"),
+        _ => null
+    });
+
+    Require(G(p, "Copione").Ruolo == Ruolo.Veggente,
+        "Il Copione doveva diventare Veggente.");
+
+    // Si passa alla notte successiva.
+    MotoreLupus.VaiAlGiorno(p);
+    MotoreLupus.ApriVoto(p);
+    var rogo = MotoreLupus.Vota(p, Nome(p, "Anna")!);
+    Require(rogo.Ok, $"Rogo non riuscito: {rogo.Errore}");
+    MotoreLupus.ProssimaNotte(p);
+    MotoreLupus.IniziaNotte(p);
+
+    var passiVeggente = p.PassiNotte.Where(x => x.Potere == Potere.Veggente).ToList();
+    Require(passiVeggente.Count == 2,
+        $"Con due Veggenti vivi devono esserci due passi, trovati {passiVeggente.Count}.");
+    Require(passiVeggente.Select(x => x.AttoreId).Distinct().Count() == 2,
+        "I due passi devono avere attori diversi: i due Veggenti si svegliano insieme.");
 }
 
 static void RuoliMortiChiamati()

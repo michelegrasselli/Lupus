@@ -223,8 +223,9 @@ public sealed class GiocatoriAi
 
     /// <summary>
     /// Sceglie il voto usando solo ciò che il ruolo gli ha detto: prima i
-    /// sospetti delle indagini, poi — se è un lupo — qualcuno fuori dal branco,
-    /// altrimenti un vivo a caso. Il voto resta segreto come per gli umani.
+    /// sospetti delle indagini, poi — se è un lupo — di solito qualcuno fuori
+    /// dal branco, altrimenti un vivo a caso. Il voto resta segreto come per
+    /// gli umani.
     /// </summary>
     private string? ScegliVoto(
         Stanza stanza,
@@ -241,7 +242,11 @@ public sealed class GiocatoriAi
         if (sospetti.Count > 0)
             return sospetti[Random.Shared.Next(sospetti.Count)].Id;
 
-        if (stato.Ruolo == Ruolo.Lupo)
+        // Il branco di solito risparmia i compagni, ma non sempre: se il lupo
+        // non votasse mai un altro lupo, chi guarda il tally capirebbe chi è
+        // nel branco. Ogni tanto un compagno viene sacrificato per sembrare
+        // puliti, quindi i lupi restano candidati come tutti.
+        if (stato.Ruolo == Ruolo.Lupo && Random.Shared.NextDouble() > 0.25)
         {
             var fuoriBranco = validi
                 .Where(c => !stato.CompagniBranco.Contains(c.Nome))
@@ -534,9 +539,16 @@ public sealed class GiocatoriAi
                 .ToList();
 
             // Ogni tanto il branco difende un compagno senza scoprirsi.
-            if (compagni.Count > 0 && Random.Shared.NextDouble() < 0.35)
+            if (compagni.Count > 0 && Random.Shared.NextDouble() < 0.3)
             {
                 return $"Contro {Scegli(compagni).Nome} non ho nulla. Se volete un nome, ne ho un altro.";
+            }
+
+            // Ma a volte attacca un compagno: se difendesse sempre gli stessi
+            // nomi, il villaggio capirebbe chi sono i lupi.
+            if (compagni.Count > 0 && Random.Shared.NextDouble() < 0.15)
+            {
+                return string.Format(Scegli(CommentiAccusa), Scegli(compagni).Nome);
             }
 
             if (fuoriBranco.Count > 0)
@@ -624,9 +636,14 @@ public sealed class GiocatoriAi
     {
         if (stato.Ruolo == Ruolo.Lupo)
         {
-            // Il branco non attacca i compagni, ma cavalca le accuse utili.
+            // Il branco di solito difende i compagni, ma non sempre: una difesa
+            // automatica a ogni accusa sarebbe una firma da lupo.
             if (stato.CompagniBranco.Contains(valutazione.Nome))
-                return $"Guarda che {valutazione.Nome} non mi sembra il tipo, {valutazione.AutoreNome}.";
+            {
+                return Random.Shared.NextDouble() < 0.55
+                    ? $"Guarda che {valutazione.Nome} non mi sembra il tipo, {valutazione.AutoreNome}."
+                    : $"Su {valutazione.Nome} non ho elementi né per difenderlo né per condannarlo.";
+            }
 
             if (valutazione.Negativo)
                 return $"Ottimo punto, {valutazione.AutoreNome}. {valutazione.Nome} non mi è mai piaciuto.";

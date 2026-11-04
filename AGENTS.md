@@ -151,7 +151,7 @@ Lupus.slnx
 | `Components/Pages/Gioca.razor` | `/gioca/{Codice}?t=...`: lobby, ruolo privato, azioni notturne, alba, discussione, voto, ballottaggio, esecuzione, finale. |
 | `Components/Pages/PartitaGioco.razor` | `/partita/{Codice}?h=...`: dashboard narratore, lobby e link, passi notte, alba, voto live, ballottaggio, rogo, finale, diario, timer, rivelazioni, chiusura stanza. |
 | `Components/Shared/PlayerPicker.razor` | Griglia di selezione con ruoli/fazioni: **solo per il narratore**. |
-| `Components/Shared/PlayerTargetPicker.razor` | Griglia di selezione senza ruoli né colori di fazione: **per i giocatori**. |
+| `Components/Shared/PlayerTargetPicker.razor` | Griglia di selezione senza ruoli né colori di fazione: **per i giocatori**. Con `MioId` marca il proprio posto come "tu" (serve al voto, dove si può scegliere anche se stessi). |
 | `Components/Shared/ChatLog.razor` | Log pubblico della piazza: messaggi, badge AI, orari, auto-scroll. Usato dal telefono e dal narratore. |
 | `Components/Shared/VoteTally.razor` | Conteggio voti con barre, elettori e non votanti. |
 | `Components/Shared/TimerCountdown.razor` | Timer con preset, pausa/reset, beep a fine tempo, callback durata. |
@@ -228,7 +228,9 @@ messaggi pubblici della piazza, e non viene mai serializzata verso i telefoni.
 
 La chat è pubblica per costruzione: `MessaggioChat` non contiene ruoli né eventi riservati.
 Un AI non deve mai usare la chat per svelare il ruolo altrui. I lupi possono bluffare e
-difendere i compagni, ma senza dichiarare ruoli nascosti; le accuse restano sospetti.
+difendere i compagni, ma senza dichiarare ruoli nascosti; le accuse restano sospetti. Un
+lupo AI può anche accusare o votare un compagno: se non lo facesse mai, il comportamento
+rivelerebbe il branco meglio di una confessione.
 
 - `StatoGiocatore.Ruolo`/`Info` sono `null` finché `Avviata == false`.
 - `GiocatorePubblico.Ruolo` è valorizzato solo per: il proprio ruolo, i morti se il narratore
@@ -265,6 +267,11 @@ esistente, autorizzazione, e `Partita.PassoCorrente?.Id == passoId`.
 ### Voto e pareggi
 
 - `Stanza._voti` è `votanteId → bersaglioId`; un giocatore vota una sola volta.
+- **Si vota chiunque sia vivo**: la lista dei candidati è `Partita.Vivi` senza filtri di
+  ruolo o fazione, e include anche se stessi. Non esiste una regola speciale per il branco:
+  un lupo può votare un altro lupo (anche in chat, per non scoprirsi), e il server non
+  rifiuta il voto. Se la lista escludesse qualcuno, chi guarda il tally capirebbe qualcosa
+  sulle alleanze.
 - Il voto è segreto finché il narratore non chiude: `StatoVoto.Conteggi` è vuoto durante il
   voto aperto, tranne per il narratore che vede il tally live.
 - `ChiudiVotoAsync` calcola i gruppi. Se il massimo è condiviso chiama
@@ -329,7 +336,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 Le regole sono state portate dalla console, correggendo i bug evidenti. Le modifiche principali:
 
 1. **I lupi scelgono solo non-lupi**: `OpzioniPerPotere(Potere.Lupo)` esclude `Ruolo.Lupo` e l'attore stesso. La regola vale per il branco: il potere copiato dell'Imputato (`Potere.ImputatoLupo`) è un attacco solitario e può puntare anche un Lupo.
-2. **Tutti i giocatori con lo stesso ruolo agiscono**: i passi notturni vengono generati per ogni attore vivo (Becchino, Cacciatore, Copione, Copione2, ecc.).
+2. **Tutti i giocatori con lo stesso ruolo agiscono**: i passi notturni vengono generati per ogni attore vivo (Becchino, Cacciatore, Copione, Copione2, ecc.). Se un Copione diventa Veggente, la notte successiva ci sono **due** passi Veggente, uno per attore: i due Veggenti si svegliano insieme e ognuno vede solo il proprio risultato.
 3. **Trappola del Cacciatore**: se il branco attacca il bersaglio trappolato, la vittima si salva e muore il capobranco. Se l'attacco arriva dal potere copiato dell'Imputato, muore l'Imputato.
 4. **Kamikaze**: se il branco lo attacca, il Kamikaze sopravvive e muore il capobranco. Se è protetto dal Guardiano, la protezione ha la precedenza e non esplode.
 5. **Baby Lupo**: se attaccato dal branco non muore, si trasforma in Lupo all'alba (`RuoloIniziale` conservato, `Trasformato = true`).
@@ -437,7 +444,7 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 ## 10. Test
 
-`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 25 scenari:
+`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 26 scenari:
 
 1. Protezione del Guardiano.
 2. Morte senza protezione.
@@ -450,20 +457,21 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 9. Copione che copia un ruolo.
 10. Copione che punta un altro Copione.
 11. Copione che punta un Copione già trasformato.
-12. Ruoli morti chiamati come segnaposto.
-13. Gufo e ballottaggio.
-14. Pareggio al rogo: secondo voto tra i più votati.
-15. Secondo voto in parità: nessuno al rogo.
-16. Narratore che salta il rogo dal voto.
-17. Imputato.
-18. Imputato che, copiato il Lupo, sbrana un Lupo.
-19. Capobranco scelto a caso tra i Lupi.
-20. Capobranco rimpiazzato a caso dopo la morte.
-21. Spia che non rivela il potere di chi ha puntato.
-22. Serializzazione.
-23. Validazione composizioni.
-24. Creazione con ruoli espliciti scelti dal narratore.
-25. Condizioni di vittoria.
+12. Copione diventato Veggente: due Veggenti si svegliano insieme, ognuno col suo passo.
+13. Ruoli morti chiamati come segnaposto.
+14. Gufo e ballottaggio.
+15. Pareggio al rogo: secondo voto tra i più votati.
+16. Secondo voto in parità: nessuno al rogo.
+17. Narratore che salta il rogo dal voto.
+18. Imputato.
+19. Imputato che, copiato il Lupo, sbrana un Lupo.
+20. Capobranco scelto a caso tra i Lupi.
+21. Capobranco rimpiazzato a caso dopo la morte.
+22. Spia che non rivela il potere di chi ha puntato.
+23. Serializzazione.
+24. Validazione composizioni.
+25. Creazione con ruoli espliciti scelti dal narratore.
+26. Condizioni di vittoria.
 
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 
@@ -548,6 +556,10 @@ Poi nel browser (narratore + almeno due schede giocatore):
 - Conferma un risultato informativo (Veggente) → il risultato compare nella card del telefono e poi sparisce: nessun quaderno.
 - "Risolvi la notte" → alba → "Vai alla discussione" → "Apri il voto".
 - Vota da due telefoni → il narratore vede il tally → "Chiudi il voto".
+- Nella scheda del voto la lista dei candidati contiene **tutti i vivi**, con "tu" sul proprio
+  posto: si può votare chiunque, anche se stessi.
+- Copione che copia la Veggente: la notte successiva il narratore vede due passi
+  "🔮 Veggente · <nome>" e ogni Veggente ha il proprio risultato.
 - Pareggio al rogo → secondo voto tra i più votati; se resta il pareggio nessuno va al rogo.
 - "Salta il rogo" dal voto o dal ballottaggio → esecuzione vuota e "Cala la notte".
 - Ballottaggio del Gufo → candidati e rogo.

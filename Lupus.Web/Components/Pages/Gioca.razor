@@ -445,7 +445,7 @@ else
                             <p class="muted">
                                 @if (voto.PuoVotare)
                                 {
-                                    <text>Scegli il tuo voto. Non puoi votare per te stesso.</text>
+                                    <text>Scegli il tuo voto: chiunque è in ballo, anche tu.</text>
                                 }
                                 else if (voto.HaVotato)
                                 {
@@ -462,6 +462,7 @@ else
                     @if (voto.PuoVotare)
                     {
                         <PlayerTargetPicker Giocatori="voto.Candidati"
+                                            MioId="@stato.GiocatoreId"
                                             SelezionatoId="@votoScelto"
                                             OnSeleziona="SelezionaVoto" />
 
@@ -508,7 +509,7 @@ else
             }
             else if (stato.Fase == FasePartita.Ballottaggio && stato.Ballottaggio is { } ballottaggio)
             {
-                var candidati = ballottaggio.Candidati.Where(c => c.Id != stato.GiocatoreId).ToList();
+                var candidati = ballottaggio.Candidati;
 
                 <div class="card player-vote-card">
                     <div class="stage-head">
@@ -527,7 +528,7 @@ else
                                 }
                                 else if (ballottaggio.PuoVotare)
                                 {
-                                    <text>Scegli tra i candidati. Non puoi votare per te stesso.</text>
+                                    <text>Scegli tra i candidati.</text>
                                 }
                                 else if (ballottaggio.HaVotato)
                                 {
@@ -557,6 +558,7 @@ else
                         else
                         {
                             <PlayerTargetPicker Giocatori="candidati"
+                                                MioId="@stato.GiocatoreId"
                                                 SelezionatoId="@ballottaggioScelto"
                                                 OnSeleziona="SelezionaBallottaggio" />
 

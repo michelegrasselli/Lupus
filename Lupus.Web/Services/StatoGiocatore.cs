@@ -234,8 +234,11 @@ public static class StatoGiocatoreFactory
             aperto: p.Fase == FasePartita.Voto && !stanza.VotoChiuso,
             chiuso: stanza.VotoChiuso,
             esito: stanza.EsitoVoto,
+            // Si vota chiunque sia vivo: anche se stessi e anche i compagni di
+            // branco. Nessuna esclusione legata al ruolo, altrimenti la lista
+            // dei candidati racconterebbe qualcosa sulle alleanze.
             candidati: p.Fase == FasePartita.Voto
-                ? p.Vivi.Where(g => g.Id != giocatore.Id).ToList()
+                ? p.Vivi.ToList()
                 : new List<Giocatore>(),
             mostraConteggi: stanza.VotoChiuso || p.Fase is FasePartita.Ballottaggio or FasePartita.Esecuzione or FasePartita.Finita,
             Pub);
