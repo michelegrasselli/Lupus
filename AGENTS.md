@@ -19,6 +19,9 @@ Stato attuale:
   del rogo e ballottaggio con conteggio in tempo reale.
 - **Giocatori AI**: posti affidati al server che giocano come persone (azioni notturne,
   conferme, voto, ballottaggio) usando solo la vista filtrata del proprio ruolo.
+- **Chat diurna "La piazza"**: se c'è almeno un AI vivo, durante il giorno gli AI commentano
+  e bluffano, gli umani fanno domande o passano informazioni, gli AI rispondono, rifiutano
+  o decidono se fidarsi. Senza AI la chat non compare e si va direttamente al voto.
 - **Nessun account, nessun database**: le stanze vivono in memoria sul server; la partita è
   esportabile/importabile come JSON.
 - **Motore separato**: `Lupus.Core` è una libreria pura, serializzabile, senza dipendenze da
@@ -149,11 +152,12 @@ Lupus.slnx
 | `Components/Pages/PartitaGioco.razor` | `/partita/{Codice}?h=...`: dashboard narratore, lobby e link, passi notte, alba, voto live, ballottaggio, rogo, finale, diario, timer, rivelazioni, chiusura stanza. |
 | `Components/Shared/PlayerPicker.razor` | Griglia di selezione con ruoli/fazioni: **solo per il narratore**. |
 | `Components/Shared/PlayerTargetPicker.razor` | Griglia di selezione senza ruoli né colori di fazione: **per i giocatori**. |
+| `Components/Shared/ChatLog.razor` | Log pubblico della piazza: messaggi, badge AI, orari, auto-scroll. Usato dal telefono e dal narratore. |
 | `Components/Shared/VoteTally.razor` | Conteggio voti con barre, elettori e non votanti. |
 | `Components/Shared/TimerCountdown.razor` | Timer con preset, pausa/reset, beep a fine tempo, callback durata. |
-| `Services/Stanza.cs` | Stato stanza: posti/token, `Posto.IsAi`, `MemorieAi`, `Avviata`, voti, esiti, flag di rivelazione, quaderni privati. |
-| `Services/StanzeService.cs` | Registro singleton: creazione (anche con indici dei posti AI), join, transizioni, azioni, voti, pareggi, `RiempiConAiAsync`, notifiche, pulizia 24h. |
-| `Services/GiocatoriAi.cs` | Cervello dei bot + `AiWorker`: legge la vista filtrata, sceglie bersagli, conferma i risultati e vota con attese casuali. |
+| `Services/Stanza.cs` | Stato stanza: posti/token, `Posto.IsAi`, `MemorieAi`, chat della piazza (`MessaggioChat`), `Avviata`, voti, esiti, flag di rivelazione, quaderni privati. |
+| `Services/StanzeService.cs` | Registro singleton: creazione (anche con indici dei posti AI), join, transizioni, azioni, voti, pareggi, `RiempiConAiAsync`, chat diurna, notifiche, pulizia 24h. |
+| `Services/GiocatoriAi.cs` | Cervello dei bot + `AiWorker`: legge la vista filtrata, sceglie bersagli, conferma i risultati, vota e gestisce la chat (commenti, domande, rifiuti, fiducia nelle informazioni umane) con attese casuali. |
 | `Services/StatoGiocatore.cs` | DTO e factory della vista giocatore: filtro privacy, azioni autorizzate, stato voto. |
 | `Services/ReteHelper.cs` | Rileva l'IPv4 LAN e costruisce gli URL `http://<ip>:5092/entra/<codice>` (fallback di rete locale). |
 | `Services/LinkAccesso.cs` | Costruisce il link da dare ai telefoni sull'origine della richiesta (`NavigationManager.BaseUri`): vale in LAN e dietro il tunnel. Espone anche il link di sola rete locale. |
@@ -179,8 +183,10 @@ Lupus.slnx
 - `Stanza.Posti`: un posto per ogni giocatore creato, con `GiocatoreId` stabile.
 - `Posto.IsAi`: il posto è giocato dal server. Il token esiste (il bot agisce con quello)
   ma non viene mostrato a nessuno; il posto nasce già occupato.
-- `Stanza.MemorieAi`: memoria privata per giocatore AI (sospetti e indagati). Non passa mai
-  dalle viste dei giocatori.
+- `Stanza.MemorieAi`: memoria privata per giocatore AI (sospetti, indagati, fiducia negli
+  umani, messaggi già valutati). Non passa mai dalle viste dei giocatori.
+- `Stanza.Chat`: messaggi pubblici della piazza, attivi solo nella fase `Giorno`; contiene
+  autore, testo, turno e l'eventuale domanda/risposta. Non contiene ruoli.
 - I token sono opachi e non indovinabili (GUID `N`); non c'è autenticazione oltre al token.
 
 ### Ciclo di vita
@@ -198,14 +204,17 @@ Lupus.slnx
    sempre eseguirli al posto loro (`EseguiPassoNarratoreAsync`). Gli AI usano lo stesso
    metodo e confermano da soli i risultati informativi.
 6. `RisolviNotteAsync` → alba; `VaiAlGiornoAsync` → giorno; `ApriVotoAsync` → voto.
-7. I telefoni e gli AI votano (`RegistraVotoAsync`, `RegistraVotoBallottaggioAsync`), il
+7. Nella fase `Giorno`, se c'è almeno un AI vivo, si apre **la piazza**: gli AI commentano
+   da soli e rispondono alle domande; gli umani possono parlare e passare informazioni.
+   Ogni AI valuta in privato se fidarsi. Senza AI vivi la chat resta chiusa.
+8. I telefoni e gli AI votano (`RegistraVotoAsync`, `RegistraVotoBallottaggioAsync`), il
    narratore chiude (`ChiudiVotoAsync`/`ChiudiBallottaggioAsync`).
-8. In caso di pareggio al rogo si apre il **secondo voto** tra i più votati
+9. In caso di pareggio al rogo si apre il **secondo voto** tra i più votati
    (`ApriBallottaggio`); se anche quello è in parità nessuno va al rogo (`SaltaRogo`).
    Se il Gufo ha aggiunto candidati si passa al ballottaggio (`ChiudiBallottaggioAsync`).
    Il narratore può sempre forzare o saltare il rogo dal pannello.
-9. `ProssimaNotteAsync` torna a `NotteIntro` con il turno successivo.
-10. `AbbandonaAsync` rimuove la stanza e notifica i telefoni, che mostrano "stanza chiusa".
+10. `ProssimaNotteAsync` torna a `NotteIntro` con il turno successivo.
+11. `AbbandonaAsync` rimuove la stanza e notifica i telefoni, che mostrano "stanza chiusa".
 
 ### Privacy (regola d'oro)
 
@@ -213,9 +222,13 @@ La vista giocatore è costruita **solo** da `StatoGiocatoreFactory.Crea`. Non pa
 direttamente `Partita` o `Giocatore` a `Gioca.razor`.
 
 Gli **AI** seguono la stessa regola: `GiocatoriAi` legge `StanzeService.StatoDi(...)` e usa
-solo `AzioneGiocatore`/`StatoVoto`. Non legge `Stanza.Partita` per decidere. La memoria del
-bot (`Stanza.MemorieAi`) nasce dai risultati delle proprie indagini e non viene mai
-serializzata verso i telefoni.
+solo `AzioneGiocatore`/`StatoVoto`/`Chat`. Non legge `Stanza.Partita` per decidere. La
+memoria del bot (`Stanza.MemorieAi`) nasce dai risultati delle proprie indagini e dai
+messaggi pubblici della piazza, e non viene mai serializzata verso i telefoni.
+
+La chat è pubblica per costruzione: `MessaggioChat` non contiene ruoli né eventi riservati.
+Un AI non deve mai usare la chat per svelare il ruolo altrui. I lupi possono bluffare e
+difendere i compagni, ma senza dichiarare ruoli nascosti; le accuse restano sospetti.
 
 - `StatoGiocatore.Ruolo`/`Info` sono `null` finché `Avviata == false`.
 - `GiocatorePubblico.Ruolo` è valorizzato solo per: il proprio ruolo, i morti se il narratore
@@ -352,7 +365,8 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 - **Notte**: passo corrente, picker con ruoli, risultato con conferma, log dei passi,
   "Risolvi la notte" quando `NotteCompleta`.
 - **Alba**: eventi pubblici, caduti, gufati, eventi riservati, interruttore "Rivela i ruoli dei caduti".
-- **Giorno**: vivi, candidati del Gufo, "Apri il voto".
+- **Giorno**: vivi, candidati del Gufo, "Apri il voto", e la chat **La piazza** (sola
+  lettura) quando c'è almeno un AI vivo.
 - **Voto**: tally live, "Chiudi il voto", "Forza il rogo", "Salta il rogo".
 - **Ballottaggio**: candidati, tally live, "Forza il rogo", "Salta il rogo"; il titolo è
   "Secondo voto" quando nasce da un pareggio (`BallottaggioDaPareggio`).
@@ -370,7 +384,8 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 - **Ruolo**: carta con icona, fazione, descrizione, capobranco, compagni di branco.
 - **Notte**: una card per ogni azione autorizzata, picker senza ruoli, risultato, conferma.
 - **Alba**: eventi pubblici, caduti (ruolo solo se rivelato), gufati.
-- **Giorno**: vivi e candidati.
+- **Giorno**: vivi, candidati e, se c'è almeno un AI vivo, la chat **La piazza**: log
+  pubblico, menu "Tutti / Chiedi a <AI>", input e invio. I morti leggono ma non scrivono.
 - **Voto/Ballottaggio**: picker, voto segreto, avanzamento, esito e tally a chiusura.
   Il secondo voto (pareggio al rogo) è etichettato come tale.
 - **Esecuzione**: condannato e ruolo se rivelato.
@@ -482,7 +497,8 @@ arrivare a `X / X hanno votato` senza toccare i telefoni.
 - Un browser ricorda un solo giocatore per stanza.
 - Il timer non conserva i secondi rimanenti tra reload.
 - I posti AI non sono salvati nell'export JSON e non vengono ricreati dall'import.
-- Gli AI non hanno una chat: discutono solo con il voto e con le informazioni del ruolo.
+- La chat degli AI usa template e parole chiave italiane: non capisce domande o
+  informazioni fuori schema e non ha una memoria condivisa del branco.
 - Lo stato "ruolo già rivelato" nella modale non è persistito.
 - Nessun test UI automatizzato.
 - Il rilevamento dell'IP LAN preferisce Wi-Fi/Ethernet reali e penalizza gli adattatori
@@ -519,6 +535,11 @@ Poi nel browser (narratore + almeno due schede giocatore):
 - Metti almeno due righe su 🤖 AI e verifica che in lobby i posti siano già occupati e marcati AI; prova anche "RiempiConAi" su un posto libero e "Rendi umano".
 - In una stanza con AI, "Avvia la partita" → "Inizia la notte" → i passi degli AI si chiudono da soli (2–5 s ciascuno); la Veggente AI conferma il risultato senza intervento.
 - "Apri il voto" → i voti degli AI arrivano da soli fino a `X / X hanno votato`.
+- Nella fase di giorno di una stanza con AI vivi compare **La piazza**: attendi un commento
+  spontaneo di un AI (5–11 s il primo), scrivi una domanda scegliendo "Chiedi a ..." e
+  verifica che risponda o rifiuti con una motivazione; scrivi un'informazione pubblica con
+  un nome e un'accusa e controlla che un AI reagisca fidandosi o dubitando.
+- In una stanza senza AI la chat non compare e "Apri il voto" funziona come sempre.
 - Nella lobby il link primario usa l'host da cui stai scrivendo: dietro tunnel è `https://dominio`, in LAN l'IP del PC.
 - Con `cloudflared tunnel --url http://localhost:5092` attivo, apri l'URL pubblico da un telefono in 4G e verifica che la lobby mostri quel dominio (non l'IP LAN).
 - Apri il link in due schede → reclama due posti → i telefoni sono in lobby senza ruolo.

@@ -30,6 +30,100 @@ public sealed class Stanza
     public DateTime CreataIl { get; init; } = DateTime.Now;
     public DateTime UltimoAggiornamento { get; set; } = DateTime.Now;
 
+    // --- Chat della piazza (solo fase Giorno) -----------------------------
+    private readonly List<MessaggioChat> _chat = new();
+    private int _chatSeq;
+
+    /// <summary>
+    /// Ultimi messaggi della piazza, in ordine cronologico. La chat vive solo
+    /// nella fase di discussione: è pubblica per tutti i giocatori vivi.
+    /// </summary>
+    public IReadOnlyList<MessaggioChat> SnapshotChat(int ultimi = 80)
+    {
+        lock (Sync)
+        {
+            var salta = Math.Max(0, _chat.Count - ultimi);
+            return _chat.Skip(salta).ToList();
+        }
+    }
+
+    public MessaggioChat AggiungiMessaggioChat(
+        string autoreId,
+        string autoreNome,
+        bool autoreAi,
+        string testo,
+        int turno,
+        string? destinatarioId,
+        bool domanda,
+        string? rispostaA)
+    {
+        lock (Sync)
+        {
+            var messaggio = new MessaggioChat
+            {
+                Id = $"c{++_chatSeq}",
+                AutoreId = autoreId,
+                AutoreNome = autoreNome,
+                AutoreAi = autoreAi,
+                Testo = testo,
+                Turno = turno,
+                Quando = DateTime.Now,
+                DestinatarioId = destinatarioId,
+                Domanda = domanda,
+                RispostaA = rispostaA
+            };
+
+            _chat.Add(messaggio);
+
+            // La piazza non deve crescere all'infinito: il narratore e i
+            // telefoni mostrano comunque solo la coda della conversazione.
+            if (_chat.Count > 200)
+                _chat.RemoveRange(0, _chat.Count - 200);
+
+            return messaggio;
+        }
+    }
+
+    /// <summary>
+    /// Domande ancora senza risposta che questo AI può gestire: quelle rivolte
+    /// a lui e quelle pubbliche del turno in corso.
+    /// </summary>
+    public IReadOnlyList<MessaggioChat> DomandeApertePerAi(string giocatoreId, int turno)
+    {
+        lock (Sync)
+        {
+            var gestite = _chat
+                .Where(m => !string.IsNullOrWhiteSpace(m.RispostaA))
+                .Select(m => m.RispostaA!)
+                .ToHashSet();
+
+            return _chat
+                .Where(m => m.Domanda
+                            && !m.AutoreAi
+                            && !gestite.Contains(m.Id)
+                            && m.Turno == turno
+                            && (m.DestinatarioId == giocatoreId
+                                || m.DestinatarioId == null))
+                .ToList();
+        }
+    }
+
+    public bool DomandaGiaGestita(string messaggioId)
+    {
+        lock (Sync)
+        {
+            return _chat.Any(m => m.RispostaA == messaggioId);
+        }
+    }
+
+    public MessaggioChat? MessaggioChatDi(string messaggioId)
+    {
+        lock (Sync)
+        {
+            return _chat.FirstOrDefault(m => m.Id == messaggioId);
+        }
+    }
+
     /// <summary>
     /// Protegge i dizionari letti dai telefoni mentre un altro circuito
     /// registra un voto o un risultato.
@@ -184,4 +278,77 @@ public sealed class MemoriaAi
 
     /// <summary>Giocatori già indagati: evita di sprecare altre notti.</summary>
     public HashSet<string> Investigati { get; } = new();
+
+    /// <summary>Turno a cui si riferiscono i contatori della chat.</summary>
+    public int TurnoChat { get; set; }
+
+    /// <summary>Commenti spontanei già fatti nella piazza di questo turno.</summary>
+    public int CommentiChat { get; set; }
+
+    /// <summary>Risposte alle domande già date in questo turno.</summary>
+    public int RisposteChat { get; set; }
+
+    /// <summary>Reazioni pubbliche alle informazioni degli umani in questo turno.</summary>
+    public int ReazioniChat { get; set; }
+
+    /// <summary>Messaggi umani già letti: ognuno si valuta una volta sola.</summary>
+    public HashSet<string> MessaggiValutati { get; } = new();
+
+    /// <summary>Cosa l'AI ha deciso di credere dei messaggi degli umani.</summary>
+    public Dictionary<string, ValutazioneMessaggio> Valutazioni { get; } = new();
+
+    /// <summary>Giocatori umani di cui l'AI si fida (o non si fida) dopo la piazza.</summary>
+    public HashSet<string> AutoriFidati { get; } = new();
+    public HashSet<string> AutoriDiffidati { get; } = new();
+}
+
+/// <summary>
+/// Il giudizio di un AI su un'informazione raccontata da un umano: serve per
+/// reagire in chat e per aggiornare i sospetti. Resta privato nella memoria AI.
+/// </summary>
+public sealed class ValutazioneMessaggio
+{
+    /// <summary>L'AI crede a quello che ha letto.</summary>
+    public bool Fidato { get; init; }
+
+    /// <summary>L'informazione accusava (true) o scagionava (false) qualcuno.</summary>
+    public bool Negativo { get; init; }
+
+    /// <summary>Giocatore di cui parlava il messaggio.</summary>
+    public string Nome { get; init; } = "";
+
+    public string AutoreNome { get; init; } = "";
+
+    /// <summary>Turno in cui è arrivato il messaggio.</summary>
+    public int Turno { get; init; }
+
+    /// <summary>L'informazione parlava proprio dell'AI che l'ha letta.</summary>
+    public bool ControDiSe { get; init; }
+
+    /// <summary>La reazione pubblica dell'AI è già stata inviata (o saltata).</summary>
+    public bool ReazioneGestita { get; set; }
+}
+
+/// <summary>
+/// Un messaggio della piazza del villaggio. La chat esiste solo durante la
+/// fase di discussione: è pubblica e non contiene informazioni di ruolo.
+/// </summary>
+public sealed class MessaggioChat
+{
+    public string Id { get; init; } = "";
+    public string AutoreId { get; init; } = "";
+    public string AutoreNome { get; init; } = "";
+    public bool AutoreAi { get; init; }
+    public string Testo { get; init; } = "";
+    public int Turno { get; init; }
+    public DateTime Quando { get; init; } = DateTime.Now;
+
+    /// <summary>AI a cui è rivolta la domanda; null per un messaggio pubblico.</summary>
+    public string? DestinatarioId { get; init; }
+
+    /// <summary>Il messaggio è una domanda che attende una risposta.</summary>
+    public bool Domanda { get; init; }
+
+    /// <summary>Id della domanda a cui questo messaggio risponde (o rifiuta di rispondere).</summary>
+    public string? RispostaA { get; init; }
 }

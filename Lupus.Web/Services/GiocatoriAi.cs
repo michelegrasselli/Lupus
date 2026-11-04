@@ -76,6 +76,10 @@ public sealed class GiocatoriAi
                     await GiocaNotteAsync(stanza, token, giocatoreId, stato);
                     break;
 
+                case FasePartita.Giorno:
+                    await GiocaGiornoAsync(stanza, token, giocatoreId, stato);
+                    break;
+
                 case FasePartita.Voto:
                     await GiocaVotoAsync(stanza, token, giocatoreId, stato);
                     break;
@@ -249,6 +253,407 @@ public sealed class GiocatoriAi
 
         return validi[Random.Shared.Next(validi.Count)].Id;
     }
+
+    // ---------------------------------------------------------------------
+    // Giorno: la piazza e la chat
+    // ---------------------------------------------------------------------
+
+    private static readonly string[] CommentiAccusa =
+    {
+        "C'è qualcosa in {0} che non mi torna. Stanotte dormiva troppo tranquillo.",
+        "Io una parola con {0} la farei prima di votare.",
+        "{0} parla poco e guarda troppo. A me non piace.",
+        "Se devo fare un nome, dico {0}: ieri sera girava troppo tardi.",
+        "{0} mi sembra più preoccupato degli altri. Chiedetegli dov'era stanotte.",
+        "Non mi fiderei di {0}. Ha risposte troppo pronte."
+    };
+
+    private static readonly string[] CommentiDifesa =
+    {
+        "Lo dico chiaro: io sono dalla parte del villaggio.",
+        "Prima di puntare il dito, guardate chi tace.",
+        "Non ho niente da nascondere. Votate con la testa.",
+        "Se cercate un colpevole, non guardate me: ho dormito e basta."
+    };
+
+    private static readonly string[] CommentiGenerici =
+    {
+        "Qualcuno stanotte ha dormito male. E non sono io.",
+        "Il villaggio ha perso gente buona. Impariamo a guardarci in faccia.",
+        "Io aspetto il voto, ma non prometto che sarò gentile.",
+        "C'è troppa calma stamattina. Non mi piace."
+    };
+
+    private static readonly string[] CommentiBluff =
+    {
+        "Stanotte ho sentito dei passi fuori casa. Qualcuno non dormiva.",
+        "Non fidatevi delle facce tranquille: qualcuno qui mente.",
+        "Ho visto un'ombra muoversi verso il bosco. Non so chi fosse, ma non era un animale.",
+        "Ho dormito poco e ho sentito una porta cigolare. Tenete gli occhi aperti."
+    };
+
+    private static readonly string[] Rifiuti =
+    {
+        "Preferisco non espormi per ora.",
+        "Non è il momento di dire tutto quello che so.",
+        "Me lo tengo per me: ho le mie ragioni.",
+        "Risponderei, ma non voglio regalare informazioni a chi non le merita.",
+        "Ho un sospetto, ma non è ancora il momento di farlo uscire."
+    };
+
+    private static readonly string[] ParoleNegative =
+    {
+        "lupo", "lupi", "cattivo", "cattiva", "colpevole", "sospetto", "sospetta",
+        "bugiardo", "bugiarda", "assassino", "non fidarti", "non mi fido",
+        "sbranato", "pericoloso", "pericolosa", "mente"
+    };
+
+    private static readonly string[] ParolePositive =
+    {
+        "buono", "buona", "innocente", "pulito", "pulita", "fidati", "sicuro", "sicura",
+        "contadino", "contadina", "onesto", "onesta"
+    };
+
+    private async Task GiocaGiornoAsync(
+        Stanza stanza,
+        string token,
+        string giocatoreId,
+        StatoGiocatore stato)
+    {
+        var memoria = Memoria(stanza, giocatoreId);
+
+        if (memoria.TurnoChat != stato.Turno)
+        {
+            memoria.TurnoChat = stato.Turno;
+            memoria.CommentiChat = 0;
+            memoria.RisposteChat = 0;
+            memoria.ReazioniChat = 0;
+        }
+
+        // 1. Legge le informazioni raccontate dagli umani e decide se crederci.
+        ValutaMessaggiUmani(stato, memoria);
+
+        // 2. Risponde a una domanda aperta (diretta o pubblica).
+        if (memoria.RisposteChat < 4)
+        {
+            var domande = _stanze.DomandeApertePerAi(stanza, giocatoreId, stato.Turno);
+            foreach (var domanda in domande)
+            {
+                var chiaveDomanda = $"{stanza.Codice}|{giocatoreId}|chat|{domanda.Id}";
+                if (!AttesaScaduta(chiaveDomanda, 2200, 6500))
+                    return;
+
+                var testo = ComponiRisposta(stato, memoria, domanda);
+                var esito = await _stanze.InviaMessaggioChatAsync(
+                    stanza, token, testo, rispostaA: domanda.Id);
+
+                if (esito.Ok)
+                    memoria.RisposteChat++;
+
+                // Una risposta per giro: le altre domande restano per dopo.
+                return;
+            }
+        }
+
+        // 3. Reagisce a un'informazione appena letta: si fida o dubita.
+        var daReagire = memoria.Valutazioni
+            .Where(kv => !kv.Value.ReazioneGestita && kv.Value.Turno == stato.Turno)
+            .Select(kv => kv.Key)
+            .FirstOrDefault();
+
+        if (daReagire != null && memoria.ReazioniChat < 3)
+        {
+            var chiaveReazione = $"{stanza.Codice}|{giocatoreId}|reazione|{daReagire}";
+            if (!AttesaScaduta(chiaveReazione, 3000, 9000))
+                return;
+
+            var valutazione = memoria.Valutazioni[daReagire];
+            valutazione.ReazioneGestita = true;
+
+            // A volte l'AI ascolta e tace: non deve sembrare un registratore.
+            // Ma se l'accusa è contro di lui, si difende sempre.
+            if (valutazione.ControDiSe || Random.Shared.NextDouble() < 0.6)
+            {
+                var esito = await _stanze.InviaMessaggioChatAsync(
+                    stanza, token, ComponiReazione(stato, valutazione));
+
+                if (esito.Ok)
+                    memoria.ReazioniChat++;
+            }
+
+            return;
+        }
+
+        // 4. Commento spontaneo, al massimo due per turno.
+        if (memoria.CommentiChat >= 2)
+            return;
+
+        var chiaveCommento = $"{stanza.Codice}|{giocatoreId}|{stato.Turno}|chatcom|{memoria.CommentiChat}";
+        var minimo = memoria.CommentiChat == 0 ? 5000 : 14000;
+        var massimo = memoria.CommentiChat == 0 ? 11000 : 26000;
+        if (!AttesaScaduta(chiaveCommento, minimo, massimo))
+            return;
+
+        var commento = ComponiCommento(stato, memoria);
+        if (commento == null)
+            return;
+
+        var risultato = await _stanze.InviaMessaggioChatAsync(stanza, token, commento);
+        if (risultato.Ok)
+            memoria.CommentiChat++;
+    }
+
+    /// <summary>
+    /// Legge i messaggi pubblici degli umani: se citano un giocatore vivo con
+    /// un'accusa o una difesa, l'AI decide se fidarsi. La decisione aggiorna i
+    /// sospetti e viene usata per il voto; il messaggio può essere un bluff.
+    /// </summary>
+    private void ValutaMessaggiUmani(StatoGiocatore stato, MemoriaAi memoria)
+    {
+        foreach (var messaggio in stato.Chat)
+        {
+            if (messaggio.AutoreAi || messaggio.Domanda)
+                continue;
+            if (!memoria.MessaggiValutati.Add(messaggio.Id))
+                continue;
+
+            // Un'accusa può riguardare anche l'AI stesso: deve poter dubitare di
+            // chi lo accusa, quindi si cercano i nomi tra tutti i vivi.
+            var candidati = stato.Vivi.Count > 0 ? stato.Vivi : AltriVivi(stato);
+            if (candidati.Count == 0)
+                continue;
+
+            // Il primo nome citato nel testo è il soggetto dell'informazione.
+            GiocatorePubblico? citato = null;
+            var posizione = int.MaxValue;
+
+            foreach (var g in candidati)
+            {
+                var i = messaggio.Testo.IndexOf(g.Nome, StringComparison.OrdinalIgnoreCase);
+                if (i >= 0 && i < posizione)
+                {
+                    posizione = i;
+                    citato = g;
+                }
+            }
+
+            if (citato == null)
+                continue;
+
+            var negativo = ContieneParola(messaggio.Testo, ParoleNegative);
+            var positivo = !negativo && ContieneParola(messaggio.Testo, ParolePositive);
+            if (!negativo && !positivo)
+                continue;
+
+            var fidato = DecideFiducia(stato, memoria, messaggio, citato, negativo);
+
+            if (fidato)
+            {
+                // Nessuno mette se stesso tra i sospetti: l'accusa contro di sé
+                // serve solo a non fidarsi di chi la lancia.
+                if (citato.Id != stato.GiocatoreId)
+                {
+                    if (negativo)
+                        memoria.Sospetti.Add(citato.Id);
+                    else
+                        memoria.Sospetti.Remove(citato.Id);
+                }
+
+                memoria.AutoriFidati.Add(messaggio.AutoreId);
+                memoria.AutoriDiffidati.Remove(messaggio.AutoreId);
+            }
+            else
+            {
+                memoria.AutoriDiffidati.Add(messaggio.AutoreId);
+                memoria.AutoriFidati.Remove(messaggio.AutoreId);
+            }
+
+            memoria.Valutazioni[messaggio.Id] = new ValutazioneMessaggio
+            {
+                Fidato = fidato,
+                Negativo = negativo,
+                Nome = citato.Nome,
+                AutoreNome = messaggio.AutoreNome,
+                Turno = messaggio.Turno,
+                ControDiSe = citato.Id == stato.GiocatoreId
+            };
+        }
+
+        if (memoria.Valutazioni.Count > 120)
+        {
+            foreach (var vecchio in memoria.Valutazioni.Keys
+                         .Take(memoria.Valutazioni.Count - 120)
+                         .ToList())
+            {
+                memoria.Valutazioni.Remove(vecchio);
+            }
+        }
+    }
+
+    private static bool DecideFiducia(
+        StatoGiocatore stato,
+        MemoriaAi memoria,
+        MessaggioChat messaggio,
+        GiocatorePubblico citato,
+        bool negativo)
+    {
+        // Se l'accusa è rivolta a lui, l'AI non si fida di chi la lancia:
+        // vale anche per il lupo, che non si autodenuncia certo in piazza.
+        if (citato.Id == stato.GiocatoreId && negativo)
+            return false;
+
+        // Il lupo non crede alle accuse contro i compagni, ma sfrutta volentieri
+        // quelle contro il villaggio: è un bluff dentro le regole.
+        if (stato.Ruolo == Ruolo.Lupo)
+        {
+            var compagno = stato.CompagniBranco.Contains(citato.Nome);
+            return negativo && !compagno;
+        }
+
+        var probabilita = 0.58;
+        if (memoria.AutoriFidati.Contains(messaggio.AutoreId)) probabilita += 0.22;
+        if (memoria.AutoriDiffidati.Contains(messaggio.AutoreId)) probabilita -= 0.22;
+        if (memoria.Sospetti.Contains(messaggio.AutoreId)) probabilita -= 0.25;
+
+        return Random.Shared.NextDouble() < Math.Clamp(probabilita, 0.1, 0.9);
+    }
+
+    private string? ComponiCommento(StatoGiocatore stato, MemoriaAi memoria)
+    {
+        var altri = AltriVivi(stato);
+        if (altri.Count == 0)
+            return null;
+
+        if (stato.Ruolo == Ruolo.Lupo)
+        {
+            var fuoriBranco = altri
+                .Where(g => !stato.CompagniBranco.Contains(g.Nome))
+                .ToList();
+            var compagni = altri
+                .Where(g => stato.CompagniBranco.Contains(g.Nome))
+                .ToList();
+
+            // Ogni tanto il branco difende un compagno senza scoprirsi.
+            if (compagni.Count > 0 && Random.Shared.NextDouble() < 0.35)
+            {
+                return $"Contro {Scegli(compagni).Nome} non ho nulla. Se volete un nome, ne ho un altro.";
+            }
+
+            if (fuoriBranco.Count > 0)
+            {
+                var sospetti = fuoriBranco
+                    .Where(g => memoria.Sospetti.Contains(g.Id))
+                    .ToList();
+                var bersaglio = sospetti.Count > 0 && Random.Shared.NextDouble() < 0.7
+                    ? Scegli(sospetti)
+                    : Scegli(fuoriBranco);
+
+                return string.Format(Scegli(CommentiAccusa), bersaglio.Nome);
+            }
+        }
+
+        var mieiSospetti = altri.Where(g => memoria.Sospetti.Contains(g.Id)).ToList();
+        if (mieiSospetti.Count > 0 && Random.Shared.NextDouble() < 0.75)
+        {
+            var nome = Scegli(mieiSospetti).Nome;
+
+            if (stato.Ruolo is Ruolo.Veggente or Ruolo.Becchino)
+                return $"Ho i miei motivi per non fidarmi di {nome}. Non ve li dico tutti.";
+
+            return string.Format(Scegli(CommentiAccusa), nome);
+        }
+
+        // Anche un buono può raccontare una balla per muovere il villaggio.
+        if (Random.Shared.NextDouble() < 0.18)
+            return Scegli(CommentiBluff);
+
+        if (Random.Shared.NextDouble() < 0.4)
+            return Scegli(CommentiDifesa);
+
+        return Scegli(CommentiGenerici);
+    }
+
+    private string ComponiRisposta(StatoGiocatore stato, MemoriaAi memoria, MessaggioChat domanda)
+    {
+        // Una domanda pubblica non ha un destinatario: l'AI si presenta.
+        var prefisso = domanda.DestinatarioId == null
+            ? "Rispondo io: "
+            : $"A {domanda.AutoreNome}: ";
+
+        // Ogni tanto la risposta è un rifiuto motivato: è una scelta di gioco.
+        if (Random.Shared.NextDouble() < 0.3)
+            return prefisso + Scegli(Rifiuti);
+
+        var altri = AltriVivi(stato);
+
+        if (stato.Ruolo == Ruolo.Lupo)
+        {
+            // Il lupo mente: dichiara di aver dormito o sposta i sospetti.
+            if (Random.Shared.NextDouble() < 0.45)
+                return prefisso + "Ho dormito tutta la notte, come un sasso. Non ho visto niente.";
+
+            var fuoriBranco = altri
+                .Where(g => !stato.CompagniBranco.Contains(g.Nome))
+                .ToList();
+
+            if (fuoriBranco.Count > 0)
+            {
+                var sospetti = fuoriBranco
+                    .Where(g => memoria.Sospetti.Contains(g.Id))
+                    .ToList();
+                var nome = Scegli(sospetti.Count > 0 ? sospetti : fuoriBranco).Nome;
+                return prefisso + $"Guarderei bene {nome}. Non dico che sia colpevole, ma non mi fido.";
+            }
+
+            return prefisso + "Io sto dalla parte del villaggio. Fidati di chi ti parla chiaro.";
+        }
+
+        var mieiSospetti = altri.Where(g => memoria.Sospetti.Contains(g.Id)).ToList();
+        if (mieiSospetti.Count > 0)
+        {
+            var nome = Scegli(mieiSospetti).Nome;
+            return prefisso + $"Ho i miei sospetti su {nome}. Non ho prove, ma state in guardia.";
+        }
+
+        return prefisso + "Non ho visto niente di strano. Se sapessi qualcosa, lo direi.";
+    }
+
+    private string ComponiReazione(
+        StatoGiocatore stato,
+        ValutazioneMessaggio valutazione)
+    {
+        if (stato.Ruolo == Ruolo.Lupo)
+        {
+            // Il branco non attacca i compagni, ma cavalca le accuse utili.
+            if (stato.CompagniBranco.Contains(valutazione.Nome))
+                return $"Guarda che {valutazione.Nome} non mi sembra il tipo, {valutazione.AutoreNome}.";
+
+            if (valutazione.Negativo)
+                return $"Ottimo punto, {valutazione.AutoreNome}. {valutazione.Nome} non mi è mai piaciuto.";
+
+            return $"Difendere {valutazione.Nome} non lo rende innocente, {valutazione.AutoreNome}.";
+        }
+
+        if (valutazione.Fidato)
+        {
+            return valutazione.Negativo
+                ? $"Se {valutazione.AutoreNome} dice che {valutazione.Nome} non è pulito, me lo segno. Occhio."
+                : $"Va bene, {valutazione.AutoreNome}: per ora mi fido di {valutazione.Nome}.";
+        }
+
+        return valutazione.Negativo
+            ? $"Puoi anche dirlo, {valutazione.AutoreNome}, ma una parola non è una prova."
+            : $"Che tu difenda {valutazione.Nome} non lo rende innocente, {valutazione.AutoreNome}.";
+    }
+
+    private static List<GiocatorePubblico> AltriVivi(StatoGiocatore stato) =>
+        stato.Vivi.Where(g => g.Id != stato.GiocatoreId).ToList();
+
+    private static bool ContieneParola(string testo, IReadOnlyList<string> parole) =>
+        parole.Any(p => testo.Contains(p, StringComparison.OrdinalIgnoreCase));
+
+    private static T Scegli<T>(IReadOnlyList<T> lista) =>
+        lista[Random.Shared.Next(lista.Count)];
 
     // ---------------------------------------------------------------------
     // Memoria e ritmo

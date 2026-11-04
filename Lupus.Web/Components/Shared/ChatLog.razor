@@ -1,0 +1,82 @@
+@* La piazza del villaggio: log pubblico usato dal telefono e dal narratore. *@
+@inject IJSRuntime JS
+
+<div class="chat-log" @ref="contenitore">
+    @if (Messaggi.Count == 0)
+    {
+        <p class="chat-empty">
+            La piazza è ancora silenziosa. Qualcuno deve pur cominciare.
+        </p>
+    }
+    else
+    {
+        @foreach (var messaggio in Messaggi)
+        {
+            var mio = !string.IsNullOrWhiteSpace(MioId) && messaggio.AutoreId == MioId;
+
+            <div class="chat-message @(messaggio.AutoreAi ? "ai" : "") @(mio ? "mine" : "")">
+                <span class="chat-avatar" aria-hidden="true">@(messaggio.AutoreAi ? "🤖" : Iniziali(messaggio.AutoreNome))</span>
+                <div class="chat-body">
+                    <div class="chat-meta">
+                        <strong>@messaggio.AutoreNome</strong>
+                        @if (messaggio.AutoreAi)
+                        {
+                            <span class="ai-badge">AI</span>
+                        }
+                        @if (mio)
+                        {
+                            <span class="chat-you">tu</span>
+                        }
+                        <span class="chat-time">@messaggio.Quando.ToString("HH:mm")</span>
+                    </div>
+                    <p class="chat-text">@messaggio.Testo</p>
+                    @if (messaggio.Domanda)
+                    {
+                        <span class="chat-tag">domanda</span>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<MessaggioChat> Messaggi { get; set; } = Array.Empty<MessaggioChat>();
+    [Parameter] public string? MioId { get; set; }
+
+    private ElementReference contenitore;
+    private int ultimoConteggio = -1;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Messaggi.Count == ultimoConteggio)
+            return;
+
+        ultimoConteggio = Messaggi.Count;
+
+        try
+        {
+            await JS.InvokeVoidAsync("lupusChat.scroll", contenitore);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Il circuito è già chiuso: nessun problema.
+        }
+        catch (InvalidOperationException)
+        {
+            // Interop non disponibile durante il render statico.
+        }
+    }
+
+    private static string Iniziali(string nome)
+    {
+        if (string.IsNullOrWhiteSpace(nome))
+            return "?";
+
+        var parti = nome.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parti.Length == 1)
+            return parti[0][..1].ToUpperInvariant();
+
+        return string.Concat(parti.Take(2).Select(p => p[..1].ToUpperInvariant()));
+    }
+}

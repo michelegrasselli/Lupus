@@ -386,6 +386,53 @@ else
                         </div>
                     }
                 </div>
+
+                @if (stato.AiVivi.Count > 0)
+                {
+                    <div class="card chat-card">
+                        <div class="stage-head">
+                            <div class="stage-icon">💬</div>
+                            <div>
+                                <p class="eyebrow">La piazza</p>
+                                <h2>Parla con il villaggio</h2>
+                                <p class="muted">
+                                    Gli AI commentano da soli e possono bluffare. Fai una domanda a un AI,
+                                    oppure racconta quello che sai: qualcuno si fiderà, qualcuno no.
+                                </p>
+                            </div>
+                        </div>
+
+                        <ChatLog Messaggi="stato.Chat" MioId="@stato.GiocatoreId" />
+
+                        @if (stato.Vivo)
+                        {
+                            <div class="chat-compose">
+                                <select class="chat-select" @bind="destinatarioChat" aria-label="Destinatario">
+                                    <option value="">Tutti</option>
+                                    @foreach (var ai in stato.AiVivi)
+                                    {
+                                        <option value="@ai.Id">Chiedi a @ai.Nome</option>
+                                    }
+                                </select>
+                                <input class="chat-input"
+                                       maxlength="280"
+                                       placeholder="@SegnapostoChat"
+                                       @bind="bozzaChat"
+                                       @bind:event="oninput"
+                                       @onkeydown="ChatKeyDown" />
+                                <button type="button" class="btn btn-primary btn-sm"
+                                        @onclick="InviaChat"
+                                        disabled="@(string.IsNullOrWhiteSpace(bozzaChat) || operazioneInCorso)">
+                                    Invia
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="muted small">Sei fuori gioco: puoi leggere la piazza, ma non parlare.</p>
+                        }
+                    </div>
+                }
             }
             else if (stato.Fase == FasePartita.Voto && stato.Voto is { } voto)
             {
@@ -627,6 +674,8 @@ else
     private bool operazioneInCorso;
     private string? votoScelto;
     private string? ballottaggioScelto;
+    private string bozzaChat = "";
+    private string? destinatarioChat;
     private FasePartita? fasePrecedente;
     private readonly Dictionary<string, string?> selezioni = new();
 
@@ -727,6 +776,8 @@ else
             fasePrecedente = stato.Fase;
             votoScelto = null;
             ballottaggioScelto = null;
+            bozzaChat = "";
+            destinatarioChat = null;
             selezioni.Clear();
         }
     }
@@ -895,6 +946,53 @@ else
 
     private static int Percentuale(int valore, int totale) =>
         totale <= 0 ? 0 : (int)Math.Round(100.0 * valore / totale);
+
+    private string SegnapostoChat =>
+        string.IsNullOrWhiteSpace(destinatarioChat)
+            ? "Scrivi al villaggio... (vero o bluff, decideranno loro)"
+            : "Scrivi la tua domanda all'AI...";
+
+    private async Task InviaChat()
+    {
+        if (stanza == null || token == null) return;
+
+        var testo = bozzaChat.Trim();
+        if (testo.Length == 0) return;
+
+        operazioneInCorso = true;
+        errore = null;
+
+        try
+        {
+            var esito = await Stanze.InviaMessaggioChatAsync(
+                stanza,
+                token,
+                testo,
+                string.IsNullOrWhiteSpace(destinatarioChat) ? null : destinatarioChat);
+
+            if (!esito.Ok)
+            {
+                errore = esito.Errore;
+            }
+            else
+            {
+                bozzaChat = "";
+                destinatarioChat = null;
+            }
+        }
+        finally
+        {
+            operazioneInCorso = false;
+            AggiornaStato();
+            StateHasChanged();
+        }
+    }
+
+    private async Task ChatKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+            await InviaChat();
+    }
 
     public void Dispose()
     {

@@ -171,9 +171,12 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
    il bersaglio dal telefono; il narratore vede lo stato e può sempre agire al posto suo.
 5. **Alba**: eventi pubblici e caduti. Il narratore decide se rivelare ai telefoni i ruoli
    dei morti (utile per il Becchino) con l'apposito interruttore.
-6. **Giorno / Voto**: il villaggio discute con il timer; il voto si raccoglie dai telefoni
-   con conteggio in tempo reale. In caso di pareggio si vota di nuovo solo tra i più votati;
-   se resta il pareggio nessuno va al rogo. Il narratore può forzare o saltare il rogo.
+6. **Giorno / Voto**: il villaggio discute con il timer. Se al tavolo c'è almeno un AI,
+   nella fase di giorno compare anche **la piazza**: gli AI commentano da soli, gli umani
+   possono fare domande o raccontare informazioni, e gli AI decidono se fidarsi. Poi il voto
+   si raccoglie dai telefoni con conteggio in tempo reale. In caso di pareggio si vota di
+   nuovo solo tra i più votati; se resta il pareggio nessuno va al rogo. Il narratore può
+   forzare o saltare il rogo.
 7. **Ballottaggio**: se il Gufo ha aggiunto candidati, i telefoni votano tra loro; anche qui
    un pareggio significa nessun rogo.
 8. **Esecuzione**: il narratore annuncia il ruolo del condannato (se c'è) e cala la notte.
@@ -205,6 +208,26 @@ I posti AI si impostano in due modi:
 Prima di avviare puoi sempre riportare un posto AI a umano con **Rendi umano** (in Home
 basta premere di nuovo il pulsante della riga). Dopo l'avvio i ruoli sono già distribuiti.
 
+### La piazza: chat diurna
+
+Se nella stanza c'è almeno un **AI ancora vivo**, durante il giorno compare la chat **La
+piazza** sul telefono dei giocatori e nel pannello del narratore. Negli altri casi la chat
+non c'è e si passa direttamente al voto.
+
+- Gli AI **commentano di loro iniziativa** (al massimo due volte per turno), con frasi
+  generiche, accuse, difese o piccoli bluff. Un lupo AI mente più spesso e non attacca i
+  compagni di branco.
+- Un umano può scegliere **Tutti** per parlare alla piazza, oppure un AI dal menu **Chiedi
+  a**: in quel caso il messaggio è una domanda. L'AI risponde oppure **rifiuta** con una
+  motivazione, per esempio "Preferisco non espormi per ora.".
+- Gli umani possono anche **raccontare informazioni** libere: se un messaggio cita un
+  giocatore vivo con un'accusa o una difesa, ogni AI decide in privato se **fidarsi o
+  dubitare** di chi parla (chi ha già mentito o è sospettato viene creduto meno). Le
+  informazioni credute cambiano i suoi sospetti e quindi il voto; le altre restano parole.
+- La chat è **pubblica**: non mostra ruoli né informazioni private. I morti e gli AI morti
+  non parlano; i morti possono leggere.
+- Il narratore vede la stessa piazza ma non scrive: resta il regista della serata.
+
 ## Funzionalità
 
 - **18 ruoli** con composizione scelta dal narratore (contatori +/−) e nomi personalizzati.
@@ -213,6 +236,8 @@ basta premere di nuovo il pulsante della riga). Dopo l'avvio i ruoli sono già d
 - **Azioni notturne dal telefono**, con fallback del narratore.
 - **Giocatori AI** che giocano come persone: scelgono di notte, confermano i risultati e
   votano al rogo, con memoria privata delle proprie indagini.
+- **Chat diurna "La piazza"**: gli AI commentano e bluffano, gli umani fanno domande o
+  passano informazioni, gli AI rispondono, si rifiutano o decidono se fidarsi.
 - **Voto del rogo e ballottaggio in tempo reale**, con conteggio e gestione dei pareggi
   (secondo voto tra i più votati, altrimenti nessuno al rogo).
 - **Diario di gioco** filtrabile, con eventi riservati al narratore.

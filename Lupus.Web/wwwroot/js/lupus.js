@@ -63,8 +63,7 @@ window.lupusStorage = {
         if (el) el.scrollTop = el.scrollHeight;
     },
 
-    copy: async function (text) {
-        try {
+    copy: async function (text) {        try {
             if (navigator.clipboard && window.isSecureContext) {
                 await navigator.clipboard.writeText(text);
                 return true;
@@ -88,6 +87,14 @@ window.lupusStorage = {
             return ok;
         } catch (e) {
             return false;
+        }
+    }
+};
+
+window.lupusChat = {
+    scroll: function (element) {
+        if (element) {
+            element.scrollTop = element.scrollHeight;
         }
     }
 };

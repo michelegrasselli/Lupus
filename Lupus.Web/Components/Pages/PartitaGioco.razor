@@ -467,6 +467,18 @@ else
                             </div>
                         }
 
+                        @if (AiViviPresenti)
+                        {
+                            <div class="narrator-chat">
+                                <h3 class="section-title">La piazza del villaggio</h3>
+                                <p class="muted small">
+                                    Gli AI commentano e rispondono da soli. Gli umani possono chiedere
+                                    o raccontare informazioni: gli AI decidono se fidarsi.
+                                </p>
+                                <ChatLog Messaggi="Chat" />
+                            </div>
+                        }
+
                         <div class="stage-actions">
                             <button type="button" class="btn btn-primary" @onclick="ApriVoto">Apri il voto</button>
                         </div>
@@ -1100,6 +1112,11 @@ else
     }
 
     private int VotantiVoto => stanza?.SnapshotVoti().Count ?? 0;
+
+    private IReadOnlyList<MessaggioChat> Chat =>
+        stanza == null ? Array.Empty<MessaggioChat>() : Stanze.ChatPubblica(stanza);
+
+    private bool AiViviPresenti => stanza != null && Stanze.HaAiVivi(stanza);
 
     private int VotantiBallottaggio => stanza?.SnapshotVotiBallottaggio().Count ?? 0;
 

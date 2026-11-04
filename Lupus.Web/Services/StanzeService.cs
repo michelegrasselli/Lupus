@@ -317,6 +317,131 @@ public sealed class StanzeService
     }
 
     // ---------------------------------------------------------------------
+    // Chat della piazza (fase Giorno)
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Copia dei messaggi della piazza per il narratore. La chat è pubblica:
+    /// non contiene ruoli né informazioni riservate.
+    /// </summary>
+    public IReadOnlyList<MessaggioChat> ChatPubblica(Stanza stanza)
+    {
+        lock (_lock)
+        {
+            return stanza.SnapshotChat();
+        }
+    }
+
+    /// <summary>Vero se in stanza c'è almeno un giocatore AI ancora vivo.</summary>
+    public bool HaAiVivi(Stanza stanza)
+    {
+        lock (_lock)
+        {
+            var p = stanza.Partita;
+            return stanza.Posti.Any(x => x.IsAi && p.Giocatore(x.GiocatoreId)?.Vivo == true);
+        }
+    }
+
+    /// <summary>
+    /// Un giocatore vivo scrive nella piazza. Con <paramref name="destinatarioId"/>
+    /// il messaggio è una domanda rivolta a un giocatore AI; con
+    /// <paramref name="rispostaA"/> un AI risponde (o rifiuta di rispondere)
+    /// a una domanda aperta.
+    /// </summary>
+    public async Task<EsitoPasso> InviaMessaggioChatAsync(
+        Stanza stanza,
+        string? token,
+        string testo,
+        string? destinatarioId = null,
+        string? rispostaA = null)
+    {
+        var pulito = (testo ?? "").Trim();
+        if (pulito.Length == 0)
+            return EsitoPasso.Fallito("Scrivi qualcosa prima di parlare.");
+        if (pulito.Length > 280)
+            pulito = pulito[..280];
+
+        lock (_lock)
+        {
+            var giocatore = stanza.GiocatoreDi(token);
+            if (giocatore == null)
+                return EsitoPasso.Fallito("Sessione non valida: rientra dalla stanza.");
+
+            var p = stanza.Partita;
+            if (p.Fase != FasePartita.Giorno)
+                return EsitoPasso.Fallito("La piazza parla solo durante la discussione del giorno.");
+            if (!giocatore.Vivo)
+                return EsitoPasso.Fallito("Sei fuori gioco: non puoi parlare nella piazza.");
+
+            var aiVivo = stanza.Posti.Any(x => x.IsAi && p.Giocatore(x.GiocatoreId)?.Vivo == true);
+            if (!aiVivo)
+                return EsitoPasso.Fallito("Non ci sono giocatori AI in vita: la piazza resta chiusa.");
+
+            var posto = stanza.PostoDi(giocatore.Id);
+
+            if (!string.IsNullOrWhiteSpace(rispostaA))
+            {
+                if (posto?.IsAi != true)
+                    return EsitoPasso.Fallito("Solo un giocatore AI può rispondere a una domanda.");
+
+                var domanda = stanza.MessaggioChatDi(rispostaA);
+                if (domanda == null || !domanda.Domanda)
+                    return EsitoPasso.Fallito("La domanda non esiste più.");
+                if (domanda.AutoreId == giocatore.Id)
+                    return EsitoPasso.Fallito("Non puoi rispondere a te stesso.");
+                if (domanda.DestinatarioId != null && domanda.DestinatarioId != giocatore.Id)
+                    return EsitoPasso.Fallito("La domanda è rivolta a un altro giocatore.");
+                if (stanza.DomandaGiaGestita(domanda.Id))
+                    return EsitoPasso.Fallito("Qualcuno ha già risposto a questa domanda.");
+            }
+
+            string? destinatarioNome = null;
+            if (!string.IsNullOrWhiteSpace(destinatarioId))
+            {
+                var bersaglio = p.Giocatore(destinatarioId);
+                if (bersaglio == null || !bersaglio.Vivo)
+                    return EsitoPasso.Fallito("Puoi fare domande solo a un giocatore vivo.");
+                if (bersaglio.Id == giocatore.Id)
+                    return EsitoPasso.Fallito("Non puoi fare domande a te stesso.");
+
+                var postoBersaglio = stanza.PostoDi(bersaglio.Id);
+                if (postoBersaglio?.IsAi != true)
+                    return EsitoPasso.Fallito("Puoi fare domande solo ai giocatori AI.");
+
+                destinatarioNome = bersaglio.Nome;
+            }
+
+            var domandaPubblica = rispostaA == null
+                && destinatarioId == null
+                && pulito.Contains('?');
+
+            stanza.AggiungiMessaggioChat(
+                giocatore.Id,
+                giocatore.Nome,
+                posto?.IsAi == true,
+                pulito,
+                p.Turno,
+                string.IsNullOrWhiteSpace(destinatarioId) ? null : destinatarioId,
+                rispostaA == null && (destinatarioNome != null || domandaPubblica),
+                string.IsNullOrWhiteSpace(rispostaA) ? null : rispostaA);
+
+            stanza.UltimoAggiornamento = DateTime.Now;
+        }
+
+        await NotificaAsync(stanza.Codice);
+        return EsitoPasso.Successo();
+    }
+
+    /// <summary>Domande che un AI può ancora gestire in questo turno.</summary>
+    public IReadOnlyList<MessaggioChat> DomandeApertePerAi(Stanza stanza, string giocatoreId, int turno)
+    {
+        lock (_lock)
+        {
+            return stanza.DomandeApertePerAi(giocatoreId, turno);
+        }
+    }
+
+    // ---------------------------------------------------------------------
     // Avvio e fasi
     // ---------------------------------------------------------------------
 

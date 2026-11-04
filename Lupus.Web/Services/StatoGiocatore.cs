@@ -35,6 +35,12 @@ public sealed class StatoGiocatore
     public IReadOnlyList<AzioneGiocatore> Azioni { get; init; } = Array.Empty<AzioneGiocatore>();
     public IReadOnlyList<string> EventiAlba { get; init; } = Array.Empty<string>();
 
+    /// <summary>Messaggi della piazza del villaggio (solo fase Giorno).</summary>
+    public IReadOnlyList<MessaggioChat> Chat { get; init; } = Array.Empty<MessaggioChat>();
+
+    /// <summary>Giocatori AI ancora vivi: sono gli unici a cui si può chiedere.</summary>
+    public IReadOnlyList<GiocatorePubblico> AiVivi { get; init; } = Array.Empty<GiocatorePubblico>();
+
     public StatoVoto? Voto { get; init; }
     public StatoVoto? Ballottaggio { get; init; }
     public bool SecondoVoto { get; init; }
@@ -56,7 +62,8 @@ public sealed record GiocatorePubblico(
     bool Capobranco,
     bool Trasformato,
     Ruolo? Ruolo,
-    Ruolo? RuoloIniziale)
+    Ruolo? RuoloIniziale,
+    bool Ai = false)
 {
     public string Accento => Ruolo is { } r ? Ruoli.Info(r).Accento : "#8b93a7";
     public string Icona => Ruolo is { } r ? Ruoli.Info(r).Icona : "❔";
@@ -106,6 +113,11 @@ public static class StatoGiocatoreFactory
         var lupo = avviata && giocatore.Ruolo == Ruolo.Lupo;
         var mostraProprio = avviata || finale;
 
+        var postiAi = stanza.Posti
+            .Where(p => p.IsAi)
+            .Select(p => p.GiocatoreId)
+            .ToHashSet();
+
         GiocatorePubblico Pub(Giocatore g)
         {
             Ruolo? ruolo = null;
@@ -137,7 +149,8 @@ public static class StatoGiocatoreFactory
                 capobrancoVisibile && g.Capobranco,
                 dettagli && g.Trasformato,
                 ruolo,
-                iniziale);
+                iniziale,
+                postiAi.Contains(g.Id));
         }
 
         var giocatori = p.Giocatori
@@ -246,6 +259,12 @@ public static class StatoGiocatoreFactory
 
         var ultimoRogo = p.Giocatore(p.UltimoRogoId) is { } rogo ? Pub(rogo) : null;
 
+        var chat = p.Fase == FasePartita.Giorno
+            ? stanza.SnapshotChat()
+            : Array.Empty<MessaggioChat>();
+
+        var aiVivi = vivi.Where(g => g.Ai && g.Vivo && g.Id != giocatore.Id).ToList();
+
         return new StatoGiocatore
         {
             Codice = stanza.Codice,
@@ -269,6 +288,8 @@ public static class StatoGiocatoreFactory
             CompagniBranco = compagni,
             Azioni = azioni,
             EventiAlba = eventiAlba,
+            Chat = chat,
+            AiVivi = aiVivi,
             Voto = voto,
             Ballottaggio = ballottaggio,
             SecondoVoto = p.Fase == FasePartita.Ballottaggio && stanza.BallottaggioDaPareggio,
