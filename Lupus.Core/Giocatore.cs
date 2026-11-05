@@ -14,6 +14,21 @@ public sealed class Giocatore
     public bool DiavoloSbranato { get; set; }
     public bool TrappolaInCooldown { get; set; }
 
+    /// <summary>
+    /// Se sono un Copione che ha copiato: il giocatore di cui ho preso il
+    /// ruolo. Lo so sempre, dal momento della copia.
+    /// </summary>
+    public string? CopiaDaId { get; set; }
+
+    /// <summary>Turno in cui è avvenuta la copia (la notte in cui ho puntato).</summary>
+    public int CopiaTurno { get; set; }
+
+    /// <summary>
+    /// Chi ha copiato il mio ruolo. Il copiato non lo scopre il primo giorno:
+    /// vede la lista solo dalla notte successiva, quando si sveglia insieme
+    /// al suo doppione.</summary>
+    public List<CopiaRuolo> CopieSubite { get; set; } = new();
+
     public string Iniziali
     {
         get
@@ -26,4 +41,13 @@ public sealed class Giocatore
     }
 
     public string RuoloAttualeNome => Ruoli.Nome(Ruolo);
+}
+
+/// <summary>
+/// Registro di una copia subita: chi ha copiato il mio ruolo e in che turno.
+/// </summary>
+public sealed class CopiaRuolo
+{
+    public string CopioneId { get; set; } = "";
+    public int Turno { get; set; }
 }

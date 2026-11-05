@@ -1261,7 +1261,25 @@ else
         if (passo.Tipo == TipoPasso.Capobranco) return "tutti i lupi";
         if (passo.AttoreMorto) return P.NomeDi(passo.AttoreId);
         if (passo.Potere == Potere.Lupo) return "il branco";
-        return P.NomeDi(passo.AttoreId);
+        return NomiAttoriPasso(passo);
+    }
+
+    private string NomiAttoriPasso(PassoNotte passo)
+    {
+        if (P == null) return "?";
+
+        var nomi = passo.ElencoAttori()
+            .Select(id => P.NomeDi(id))
+            .Where(n => n != "?")
+            .ToList();
+
+        return nomi.Count switch
+        {
+            0 => "?",
+            1 => nomi[0],
+            2 => $"{nomi[0]} e {nomi[1]}",
+            _ => string.Join(", ", nomi.Take(nomi.Count - 1)) + $" e {nomi[^1]}"
+        };
     }
 
     /// <summary>"Tocca a Giocatore 2", ma "Tocca al branco".</summary>
@@ -1271,7 +1289,7 @@ else
         if (passo.Tipo == TipoPasso.Capobranco) return "Toccano a tutti i lupi";
         if (passo.AttoreMorto) return $"Tocca a {P.NomeDi(passo.AttoreId)} (morto)";
         if (passo.Potere == Potere.Lupo) return "Tocca al branco";
-        return $"Tocca a {P.NomeDi(passo.AttoreId)}";
+        return $"Tocca a {NomiAttoriPasso(passo)}";
     }
 
     private string AttorePasso(PassoNotte passo)
@@ -1284,6 +1302,9 @@ else
 
         if (passo.Potere == Potere.Lupo)
             return "Azione del branco.";
+
+        if (passo.ElencoAttori().Count > 1)
+            return $"Azione condivisa di {NomiAttoriPasso(passo)}.";
 
         return $"Azione di {AttoreBreve(passo)}.";
     }

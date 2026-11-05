@@ -42,6 +42,20 @@ public sealed class Partita
 
     public string NomeDi(string? id) => Giocatore(id)?.Nome ?? "?";
 
+    /// <summary>Attori di un passo: tutti quelli del gruppo, o il solo AttoreId.</summary>
+    public List<Giocatore> AttoriDelPasso(PassoNotte passo) =>
+        passo.ElencoAttori()
+            .Select(Giocatore)
+            .OfType<Giocatore>()
+            .ToList();
+
+    /// <summary>Attori di un'azione registrata durante la notte.</summary>
+    public List<Giocatore> AttoriDellAzione(AzioneNotte azione) =>
+        azione.ElencoAttori()
+            .Select(Giocatore)
+            .OfType<Giocatore>()
+            .ToList();
+
     public PassoNotte? PassoCorrente => PassiNotte.FirstOrDefault(p => !p.Completato);
 
     public bool NotteCompleta => PassiNotte.All(p => p.Completato);
@@ -81,11 +95,18 @@ public sealed class Partita
         foreach (var g in Giocatori)
         {
             g.Nome ??= "";
+            g.CopieSubite ??= new();
         }
 
         foreach (var passo in PassiNotte)
         {
             passo.OpzioniIds ??= new();
+            passo.AttoriIds ??= new();
+        }
+
+        foreach (var azione in AzioniNotte)
+        {
+            azione.AttoriIds ??= new();
         }
 
         RisultatoNotte?.Normalizza();

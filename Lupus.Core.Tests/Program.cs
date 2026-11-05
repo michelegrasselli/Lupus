@@ -17,6 +17,9 @@ var tests = new (string Nome, Action Test)[]
     ("Copione: può puntare un altro Copione", CopioniSiPuntano),
     ("Copione: copia un Copione che ha già copiato", CopioneCopiaCopioneTrasformato),
     ("Copione: due Veggenti si svegliano insieme", DueVeggenti),
+    ("Copione: due Guardiani proteggono insieme", () => DoppioneGuardiano(Ruolo.Copione)),
+    ("Copione 2: il doppione funziona allo stesso modo", () => DoppioneGuardiano(Ruolo.Copione2)),
+    ("Imputato: due Imputati usano insieme i poteri copiati", DueImputati),
     ("Ruoli morti: vengono comunque chiamati", RuoliMortiChiamati),
     ("Gufo: ballottaggio", GufoBallottaggio),
     ("Rogo: pareggio e secondo voto", PareggioAlRogo),
@@ -447,23 +450,156 @@ static void DueVeggenti()
         _ => null
     });
 
-    Require(G(p, "Copione").Ruolo == Ruolo.Veggente,
+    var copione = G(p, "Copione");
+    var veggente = G(p, "Veggente");
+
+    Require(copione.Ruolo == Ruolo.Veggente,
         "Il Copione doveva diventare Veggente.");
+    Require(copione.CopiaDaId == veggente.Id,
+        "Il Copione deve sapere di aver copiato il ruolo della Veggente.");
+    Require(veggente.CopieSubite.Any(c => c.CopioneId == copione.Id && c.Turno == 1),
+        "La Veggente deve avere il registro della copia subita.");
+    Require(p.Turno == 1,
+        "Il copiato non deve scoprire la copia nel turno stesso: la vista filtra su Turno > CopiaTurno.");
 
     // Si passa alla notte successiva.
     MotoreLupus.VaiAlGiorno(p);
     MotoreLupus.ApriVoto(p);
-    var rogo = MotoreLupus.Vota(p, Nome(p, "Anna")!);
+    var rogo = MotoreLupus.Vota(p, Nome(p, "Carla")!);
     Require(rogo.Ok, $"Rogo non riuscito: {rogo.Errore}");
     MotoreLupus.ProssimaNotte(p);
     MotoreLupus.IniziaNotte(p);
 
     var passiVeggente = p.PassiNotte.Where(x => x.Potere == Potere.Veggente).ToList();
-    Require(passiVeggente.Count == 2,
-        $"Con due Veggenti vivi devono esserci due passi, trovati {passiVeggente.Count}.");
-    Require(passiVeggente.Select(x => x.AttoreId).Distinct().Count() == 2,
-        "I due passi devono avere attori diversi: i due Veggenti si svegliano insieme.");
+    Require(passiVeggente.Count == 1,
+        $"Con due Veggenti vivi deve esserci un solo passo condiviso, trovati {passiVeggente.Count}.");
+
+    var passo = passiVeggente[0];
+    Require(passo.ElencoAttori().Count == 2,
+        "Il passo Veggente deve avere entrambi i doppioni come attori.");
+    Require(passo.ElencoAttori().Contains(copione.Id) && passo.ElencoAttori().Contains(veggente.Id),
+        "Il passo condiviso deve includere sia il Copione sia la Veggente.");
+    Require(!passo.OpzioniIds.Contains(copione.Id) && !passo.OpzioniIds.Contains(veggente.Id),
+        "Nessuno dei due Veggenti deve poter puntare se stesso o il suo doppione.");
+    Require(p.Turno == 2,
+        "Dalla notte successiva il copiato è al corrente della copia (Turno > CopiaTurno).");
+
+    // I due puntano lo stesso bersaglio: un solo passo, un solo risultato.
+    EseguiNotte(p, p2 => p2.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Anna"),
+        Potere.Veggente => Nome(p, "Lupo"),
+        Potere.Guardiano => Nome(p, "Anna"),
+        _ => null
+    });
+
+    Require(passo.Risultato != null && passo.Risultato.Contains("CATTIVO"),
+        "Il risultato condiviso deve essere lo stesso per i due Veggenti.");
 }
+
+static void DoppioneGuardiano(Ruolo ruoloCopione)
+{
+    var nomeCopione = "Copione";
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        (nomeCopione, ruoloCopione),
+        ("Guardiano", Ruolo.Guardiano),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino),
+        ("Carla", Ruolo.Contadino));
+
+    Notte(p);
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Carla"),
+        Potere.Copione or Potere.Copione2 => Nome(p, "Guardiano"),
+        Potere.Guardiano => Nome(p, "Bruno"),
+        _ => null
+    });
+
+    var copione = G(p, nomeCopione);
+    Require(copione.Ruolo == Ruolo.Guardiano,
+        $"{Ruoli.Nome(ruoloCopione)} doveva diventare Guardiano.");
+    Require(copione.CopiaDaId == G(p, "Guardiano").Id,
+        $"{Ruoli.Nome(ruoloCopione)} deve sapere di aver copiato il Guardiano.");
+
+    MotoreLupus.VaiAlGiorno(p);
+    MotoreLupus.ApriVoto(p);
+    var rogo = MotoreLupus.Vota(p, Nome(p, "Bruno")!);
+    Require(rogo.Ok, $"Rogo non riuscito: {rogo.Errore}");
+    MotoreLupus.ProssimaNotte(p);
+    MotoreLupus.IniziaNotte(p);
+
+    var passi = p.PassiNotte.Where(x => x.Potere == Potere.Guardiano).ToList();
+    Require(passi.Count == 1,
+        $"I due Guardiani devono avere un solo passo condiviso, trovati {passi.Count}.");
+    Require(passi[0].ElencoAttori().Count == 2,
+        "Il passo condiviso deve avere entrambi i Guardiani come attori.");
+
+    EseguiNotte(p, passo => passo.Potere switch
+    {
+        Potere.Lupo => Nome(p, "Anna"),
+        Potere.Guardiano => Nome(p, "Anna"),
+        _ => null
+    });
+
+    Require(G(p, "Anna").Vivo,
+        "I due Guardiani dovevano proteggere insieme la stessa persona.");
+}
+
+static void DueImputati()
+{
+    var p = Crea(
+        ("Lupo", Ruolo.Lupo),
+        ("Imputato1", Ruolo.Imputato),
+        ("Imputato2", Ruolo.Imputato),
+        ("Veggente", Ruolo.Veggente),
+        ("Guardiano", Ruolo.Guardiano),
+        ("Anna", Ruolo.Contadino),
+        ("Bruno", Ruolo.Contadino));
+
+    Notte(p);
+
+    // La Veggente punta il primo Imputato, il Guardiano il secondo: i due
+    // Imputati devono usare insieme l'unione dei poteri copiati.
+    while (!p.NotteCompleta)
+    {
+        var passo = p.PassoCorrente!;
+
+        var targetId = passo.Potere switch
+        {
+            Potere.Lupo => Nome(p, "Bruno"),
+            Potere.Veggente => Nome(p, "Imputato1"),
+            Potere.Guardiano => Nome(p, "Imputato2"),
+            Potere.ImputatoVeggente => Nome(p, "Lupo"),
+            Potere.ImputatoGuardiano => Nome(p, "Anna"),
+            _ => passo.OpzioniIds.FirstOrDefault()
+        };
+
+        var esito = MotoreLupus.EseguiPasso(p, passo.Id, targetId);
+        Require(esito.Ok, $"Passo '{passo.Titolo}': {esito.Errore}");
+        if (!passo.Completato) MotoreLupus.ConfermaRisultato(p, passo.Id);
+    }
+
+    var passi = p.PassiNotte
+        .Where(x => x.Potere is Potere.ImputatoVeggente or Potere.ImputatoGuardiano)
+        .ToList();
+
+    Require(passi.Count == 2,
+        $"Due Imputati devono generare i due poteri copiati insieme, trovati {passi.Count}.");
+
+    foreach (var passo in passi)
+    {
+        Require(passo.ElencoAttori().Count == 2,
+            $"Il passo {Etichetta(passo.Potere)} deve essere condiviso dai due Imputati.");
+    }
+
+    var risultato = MotoreLupus.RisolviNotte(p);
+    Require(risultato.Ok, $"Risoluzione notte: {risultato.Errore}");
+    Require(G(p, "Anna").Vivo, "Il potere copiato del Guardiano doveva proteggere Anna.");
+}
+
+static string Etichetta(Potere potere) => potere.ToString();
 
 static void RuoliMortiChiamati()
 {
@@ -796,7 +932,8 @@ static void CapobrancoRimpiazzato()
 static void SpiaNonRivelaPotere()
 {
     var p = Crea(
-        ("Lupo", Ruolo.Lupo),
+        ("Lupo1", Ruolo.Lupo),
+        ("Lupo2", Ruolo.Lupo),
         ("Spia", Ruolo.Spia),
         ("Anna", Ruolo.Veggente),
         ("Bruno", Ruolo.Contadino),
@@ -807,18 +944,24 @@ static void SpiaNonRivelaPotere()
     EseguiNotte(p, passo => passo.Potere switch
     {
         Potere.Lupo => Nome(p, "Bruno"),
-        Potere.Veggente => Nome(p, "Spia"),
-        Potere.Spia => Nome(p, "Spia"),
+        Potere.Veggente => Nome(p, "Bruno"),
+        Potere.Spia => Nome(p, "Bruno"),
         _ => null
     });
 
     var passoSpia = p.PassiNotte.First(x => x.Potere == Potere.Spia);
     var risultato = passoSpia.Risultato ?? "";
 
-    // La Spia deve sapere chi l'ha puntata (Anna), ma non che Anna è la Veggente.
-    Require(risultato.Contains("Anna"), $"La Spia non vede chi l'ha puntata: '{risultato}'");
+    // La Spia deve sapere chi ha puntato Bruno (Anna), ma non che Anna è la
+    // Veggente. Il branco resta una voce sola: se la Spia vedesse tutti i lupi,
+    // una sola indagine smaschererebbe il branco.
+    Require(risultato.Contains("Anna"), $"La Spia non vede chi ha puntato Bruno: '{risultato}'");
     Require(!risultato.Contains("Veggente", StringComparison.OrdinalIgnoreCase),
-        $"La Spia scopre anche il potere di chi l'ha puntata: '{risultato}'");
+        $"La Spia scopre anche il potere di chi ha puntato: '{risultato}'");
+
+    var lupiVisibili = new[] { "Lupo1", "Lupo2" }.Count(risultato.Contains);
+    Require(lupiVisibili == 1,
+        $"La Spia deve vedere un solo lupo (il capobranco), ne vede {lupiVisibili}: '{risultato}'");
 }
 
 static void Salvataggio()

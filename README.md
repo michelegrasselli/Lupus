@@ -151,7 +151,7 @@ raggiunge Kestrel su `localhost`.
 # Build dell'intera soluzione
 dotnet build Lupus.slnx
 
-# Test del motore di gioco (26 scenari)
+# Test del motore di gioco (29 scenari)
 dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 ```
 
@@ -169,6 +169,9 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
    anche gli AI ricevono il loro, ma restano sul server.
 4. **Notte**: il motore genera i passi in ordine di priorità. Il giocatore di turno sceglie
    il bersaglio dal telefono; il narratore vede lo stato e può sempre agire al posto suo.
+   Se due giocatori vivi hanno lo stesso ruolo (per esempio un Copione che ha copiato la
+   Veggente, o due Guardiani), si svegliano insieme, vedono un solo passo e puntano insieme
+   un solo bersaglio, come fa il branco.
 5. **Alba**: eventi pubblici e caduti. Il narratore decide se rivelare ai telefoni i ruoli
    dei morti (utile per il Becchino) con l'apposito interruttore.
 6. **Giorno / Voto**: il villaggio discute con il timer. Se al tavolo c'è almeno un AI,
@@ -191,6 +194,18 @@ dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
   giocatore.
 - Lo **stato pubblico**: vivi, morti, eventi dell'alba, candidati al ballottaggio.
 - Mai i ruoli degli altri giocatori vivi.
+
+### Doppioni: Copione e ruoli duplicati
+
+Un **Copione** (o Copione 2) che copia un ruolo ne diventa il **doppione**: il suo ruolo
+cambia all'alba e nella sua vista compare **🎭 Doppione di <nome>**, come i lupi vedono il
+proprio branco. La persona copiata non lo scopre subito: se ne accorge dalla notte
+successiva, quando i due si svegliano insieme e nella sua vista compare **🎭 Il tuo ruolo
+ha un doppione**. Da quel momento i due agiscono con un solo passo condiviso e scelgono
+insieme lo stesso bersaglio (due Guardiani proteggono la stessa persona, due Veggenti
+vedono lo stesso responso, e così via). Se il Copione muore prima di quella notte, il
+copiato non riceve nessun annuncio. Anche i **due Imputati** usano insieme l'unione dei
+poteri copiati quella notte.
 
 ### Giocatori AI
 
@@ -237,6 +252,8 @@ non c'è e si passa direttamente al voto.
 - **Macchina a stati** esplicita: `NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzione → …`
 - **Stanze in memoria** con codice a 5 lettere, posti reclamabili e token per dispositivo.
 - **Azioni notturne dal telefono**, con fallback del narratore.
+- **Doppioni**: il Copione che copia diventa il doppione del bersaglio; i due si svegliano
+  insieme, puntano lo stesso bersaglio e si riconoscono dalla notte successiva alla copia.
 - **Giocatori AI** che giocano come persone: scelgono di notte, confermano i risultati e
   votano al rogo, con memoria privata delle proprie indagini.
 - **Chat diurna "La piazza"**: gli AI commentano e bluffano, gli umani fanno domande o
@@ -255,7 +272,7 @@ non c'è e si passa direttamente al voto.
 Lupus.slnx
 ├── Lupus/              # vecchia app console (riferimento storico, invariata)
 ├── Lupus.Core/         # motore di gioco puro e serializzabile
-├── Lupus.Core.Tests/   # harness console con 26 scenari di regole
+├── Lupus.Core.Tests/   # harness console con 29 scenari di regole
 └── Lupus.Web/          # Blazor Server, UI italiana, stanze multiplayer
 ```
 

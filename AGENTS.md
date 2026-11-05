@@ -50,7 +50,7 @@ Esegui dalla root `C:\Users\miche\Desktop\PROGETTI_AI\Lupus`.
 # Build dell'intera soluzione
 dotnet build Lupus.slnx
 
-# Test del motore (harness console, 25 scenari)
+# Test del motore (harness console, 29 scenari)
 dotnet run --project Lupus.Core.Tests/Lupus.Core.Tests.csproj
 
 # Avvio web (profilo HTTP, senza certificati)
@@ -132,9 +132,9 @@ Lupus.slnx
 | File | Responsabilità |
 | --- | --- |
 | `Ruolo.cs` | Enum `Ruolo`, record `RuoloInfo`, catalogo `Ruoli.Tutti` con nome, descrizione, priorità, fazione, icona, accento. |
-| `Giocatore.cs` | Stato del giocatore: ruolo attuale/iniziale, vivo, capobranco, flag morte/trasformazione/Diavolo/trappola. |
-| `Partita.cs` | Stato serializzabile: giocatori, turno, fase, passi notte, azioni, risultato, voto, ballottaggio, esito, log, timer. Contiene `Normalizza()` e `PreparaNuovaNotte()`. |
-| `Modelli.cs` | Enum `FasePartita`, `EsitoPartita`, `TipoLog`, `TipoPasso`, `Potere`; classi `PassoNotte`, `AzioneNotte`, `VoceLog`, `EventoNotte`, `RisultatoNotte`, `EsitoPasso`. |
+| `Giocatore.cs` | Stato del giocatore: ruolo attuale/iniziale, vivo, capobranco, flag morte/trasformazione/Diavolo/trappola, registro delle copie (`CopiaDaId`, `CopiaTurno`, `CopieSubite`). |
+| `Partita.cs` | Stato serializzabile: giocatori, turno, fase, passi notte, azioni, risultato, voto, ballottaggio, esito, log, timer. Contiene `Normalizza()`, `PreparaNuovaNotte()`, `AttoriDelPasso`/`AttoriDellAzione`. |
+| `Modelli.cs` | Enum `FasePartita`, `EsitoPartita`, `TipoLog`, `TipoPasso`, `Potere`; classi `PassoNotte`/`AzioneNotte` (con `AttoriIds` per i ruoli duplicati), `VoceLog`, `EventoNotte`, `RisultatoNotte`, `EsitoPasso`. |
 | `MotoreLupus.cs` | Tutte le transizioni di stato e le regole notturne/di voto. Unica fonte di verità. |
 | `CreazionePartita.cs` | Validazione configurazione, creazione giocatori, assegnazione casuale dei ruoli (o esplicita da una mappa nome→ruolo). |
 | `Preset.cs` | 5 preset storici (Rapida 6, Classica 8, Villaggio 10, Caos 14, Completa 18): restano come API del motore, ma la Home non li usa più. |
@@ -158,7 +158,7 @@ Lupus.slnx
 | `Services/Stanza.cs` | Stato stanza: posti/token, `Posto.IsAi`, `MemorieAi`, chat della piazza (`MessaggioChat`), `Avviata`, voti, esiti, flag di rivelazione, quaderni privati. |
 | `Services/StanzeService.cs` | Registro singleton: creazione (anche con indici dei posti AI), join, transizioni, azioni, voti, pareggi, `RiempiConAiAsync`, chat diurna, notifiche, pulizia 24h. |
 | `Services/GiocatoriAi.cs` | Cervello dei bot + `AiWorker`: legge la vista filtrata, sceglie bersagli, conferma i risultati, vota e gestisce la chat (commenti, domande, rifiuti, fiducia nelle informazioni umane) con attese casuali. |
-| `Services/StatoGiocatore.cs` | DTO e factory della vista giocatore: filtro privacy, azioni autorizzate, stato voto. |
+| `Services/StatoGiocatore.cs` | DTO e factory della vista giocatore: filtro privacy, azioni autorizzate, stato voto, info doppioni (`CopiaDaNome`, `CopiatoDaNomi`, `CompagniPasso`). |
 | `Services/ReteHelper.cs` | Rileva l'IPv4 LAN e costruisce gli URL `http://<ip>:5092/entra/<codice>` (fallback di rete locale). |
 | `Services/LinkAccesso.cs` | Costruisce il link da dare ai telefoni sull'origine della richiesta (`NavigationManager.BaseUri`): vale in LAN e dietro il tunnel. Espone anche il link di sola rete locale. |
 | `Services/ArchivioSessioni.cs` | Sessioni host/giocatore in `localStorage` (`lupus.sessioni.v1`). |
@@ -240,10 +240,16 @@ rivelerebbe il branco meglio di una confessione.
   privato (o finale).
 - `AzioneGiocatore.Risultato` è popolato solo per i passi autorizzati al giocatore.
 - `EventiAlba` esclude gli eventi con `Riservato = true`.
+- `StatoGiocatore.CopiaDaNome` è visibile solo al Copione stesso (lo sa subito);
+  `CopiatoDaNomi` è visibile solo al copiato e solo da `Turno > CopiaTurno`
+  (cioè dalla notte in cui i due si svegliano insieme), oppure alla fine.
+  I doppioni non compaiono mai in `GiocatorePubblico`: sono informazioni private.
 - Il **risultato di un passo non deve rivelare ciò che il potere non dice**: la Puttana
   (e l'Imputato con potere copiato) sa con chi ha passato la notte, **non** se era un Lupo
   né che morirà. La Spia scopre solo **chi** ha puntato il bersaglio, **non** con quale
-  potere: non aggiungere il ruolo dell'attore al risultato. I dettagli extra vanno in
+  potere: non aggiungere il ruolo dell'attore al risultato. Con i ruoli duplicati elenca il
+  gruppo che ha agito insieme, ma per il branco mostra solo il capobranco: altrimenti una
+  sola indagine smaschererebbe tutti i lupi. I dettagli extra vanno in
   `MotoreLupus.NotaNarratore`, che finisce solo nel diario del narratore. Vale per ogni nuovo
   potere: prima di scrivere `passo.Risultato`, chiedersi se quella frase è lecita per il
   ruolo che la legge.
@@ -259,7 +265,8 @@ rivelerebbe il branco meglio di una confessione.
 - `TipoPasso.Capobranco` → qualsiasi Lupo vivo. Il passo non viene più generato (il
   capobranco è scelto a caso dal motore), ma resta gestito per i salvataggi vecchi.
 - `Potere.Lupo` → qualsiasi Lupo vivo.
-- altrimenti → solo `passo.AttoreId`.
+- altrimenti → qualsiasi membro di `passo.ElencoAttori()` (i ruoli duplicati agiscono
+  insieme). Per i salvataggi vecchi `AttoriIds` è vuoto e vale il solo `AttoreId`.
 
 In più `StanzeService` verifica sempre: token valido, fase `Notte`, giocatore vivo, passo
 esistente, autorizzazione, e `Partita.PassoCorrente?.Id == passoId`.
@@ -303,7 +310,7 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 ```
 
 - `Avvia` imposta turno 1, `NotteIntro`, prepara la notte e assegna a caso il capobranco iniziale se manca.
-- `IniziaNotte` genera i `PassiNotte` in ordine di priorità. Se il capobranco è caduto o ha cambiato ruolo, ne viene scelto subito un altro a caso tra i Lupi vivi (non esiste più un passo di elezione manuale). I passi senza bersagli validi vengono creati già completati con un risultato informativo. Anche gli attori morti ricevono un passo segnaposto già chiuso (`AttoreMorto = true`): il numero e l'ordine delle chiamate non devono rivelare quali ruoli sono caduti.
+- `IniziaNotte` genera i `PassiNotte` in ordine di priorità. Se il capobranco è caduto o ha cambiato ruolo, ne viene scelto subito un altro a caso tra i Lupi vivi (non esiste più un passo di elezione manuale). I passi senza bersagli validi vengono creati già completati con un risultato informativo. Anche gli attori morti ricevono un passo segnaposto già chiuso (`AttoreMorto = true`): il numero e l'ordine delle chiamate non devono rivelare quali ruoli sono caduti. Gli attori vivi con lo stesso ruolo condividono un solo passo (`AttoriIds`), come il branco.
 - `EseguiPasso(partita, passoId, bersaglioId)` registra l'azione e calcola il risultato. Se `RichiedeConferma`, il passo resta non completato e la UI mostra il risultato con un pulsante di conferma; altrimenti si completa subito.
 - `ConfermaRisultato` completa un passo informativo che richiede conferma.
 - `RisolviNotte` applica morti, trappole, Kamikaze, Baby Lupo, Diavolo, Copioni e calcola il risultato dell'alba. Imposta `Fase = Alba` oppure `Finita` se c'è una vittoria.
@@ -325,6 +332,8 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 - I passi informativi già completati hanno `Saltato = true` e `Risultato` valorizzato. Il loro `Potere` deve essere quello reale del ruolo o `Potere.Nessuno`, mai il valore predefinito `Lupo`: altrimenti il diario del narratore li attribuisce al branco.
 - I passi segnaposto degli attori morti hanno `AttoreMorto = true`, `Completato = true` e `Saltato = true`; restano nel diario del narratore ma non vengono mostrati ai giocatori.
 - I passi che richiedono conferma hanno `RichiedeConferma = true`; dopo `EseguiPasso` hanno `Risultato` ma `Completato = false`.
+- `PassoNotte.AttoriIds`/`AzioneNotte.AttoriIds` elencano tutti gli attori che agiscono insieme; `ElencoAttori()` restituisce la lista e, se è vuota (salvataggi vecchi), il solo `AttoreId`. Non leggere `AttoreId` per decidere chi può agire: usare `ElencoAttori()`.
+- La copia del Copione è registrata su `Giocatore.CopiaDaId`/`CopiaTurno` (per il Copione) e su `CopieSubite`/`CopiaRuolo` (per il copiato, con il turno della copia).
 - `Partita.UltimoRogoId` viene impostato da `EseguiRogo` e serve alla schermata di fine giornata. `PreparaNuovaNotte` lo azzera.
 - `Partita.BallottaggioIds` contiene i candidati del Gufo durante l'alba/giorno/voto; durante il ballottaggio contiene i candidati finali (votato + gufati, oppure i più votati in caso di pareggio + gufati).
 - `Partita.UltimoRogoId` resta `null` quando il rogo viene saltato o quando anche il secondo voto è in parità.
@@ -336,17 +345,17 @@ NotteIntro → Notte → Alba → Giorno → Voto → Ballottaggio → Esecuzion
 Le regole sono state portate dalla console, correggendo i bug evidenti. Le modifiche principali:
 
 1. **I lupi scelgono solo non-lupi**: `OpzioniPerPotere(Potere.Lupo)` esclude `Ruolo.Lupo` e l'attore stesso. La regola vale per il branco: il potere copiato dell'Imputato (`Potere.ImputatoLupo`) è un attacco solitario e può puntare anche un Lupo.
-2. **Tutti i giocatori con lo stesso ruolo agiscono**: i passi notturni vengono generati per ogni attore vivo (Becchino, Cacciatore, Copione, Copione2, ecc.). Se un Copione diventa Veggente, la notte successiva ci sono **due** passi Veggente, uno per attore: i due Veggenti si svegliano insieme e ognuno vede solo il proprio risultato.
-3. **Trappola del Cacciatore**: se il branco attacca il bersaglio trappolato, la vittima si salva e muore il capobranco. Se l'attacco arriva dal potere copiato dell'Imputato, muore l'Imputato.
+2. **Ruoli duplicati: si agisce insieme**: i passi notturni vengono generati una sola volta per ruolo, non per attore: il passo porta `AttoriIds` con tutti i vivi di quel ruolo (più `AttoreId` come attore principale) e si svegliano insieme come il branco, puntando **un solo bersaglio**. L'autorizzazione vale per qualsiasi membro del gruppo e il risultato è condiviso. Se un Copione diventa Veggente, la notte successiva c'è **un** passo Veggente con due attori; con due Guardiani la protezione è una sola; due Cacciatori condividono la trappola (se uno è in cooldown riposano entrambi); due Puttane che scelgono un Lupo muoiono entrambe; l'Imputato usa l'unione dei poteri copiati da tutti gli Imputati vivi. I due Copioni (Copione e Copione 2) restano passi separati finché non copiano, poi si raggruppano per ruolo effettivo.
+3. **Trappola del Cacciatore**: se il branco attacca il bersaglio trappolato, la vittima si salva e muore il capobranco. Se l'attacco arriva dal potere copiato dell'Imputato, muoiono tutti gli Imputati che vi hanno partecipato.
 4. **Kamikaze**: se il branco lo attacca, il Kamikaze sopravvive e muore il capobranco. Se è protetto dal Guardiano, la protezione ha la precedenza e non esplode.
 5. **Baby Lupo**: se attaccato dal branco non muore, si trasforma in Lupo all'alba (`RuoloIniziale` conservato, `Trasformato = true`).
 6. **Diavolo**: se sbranato sopravvive con `DiavoloSbranato = true`. Se viene anche votato nello stesso turno, vince da solo. Il flag viene azzerato solo dopo il rogo, non all'inizio del giorno.
-7. **Copione / Copione 2**: copiano il ruolo di un giocatore e la trasformazione avviene all'alba. Possono puntarsi a vicenda: se il bersaglio è ancora un Copione non copiano nulla e restano Copioni, potendo riprovare la notte successiva. La copia si risolve sui ruoli di inizio alba, così l'ordine dei passi non cambia l'esito.
+7. **Copione / Copione 2**: copiano il ruolo di un giocatore e la trasformazione avviene all'alba. Il Copione diventa un **doppione** del copiato: lo sa subito (`CopiaDaId`/`CopiaTurno`) e nella sua vista vede sempre "Doppione di X", come i lupi con il branco. Il copiato non lo scopre il primo giorno: dalla notte successiva (`Turno > CopiaTurno`) vede chi ha copiato il suo ruolo, perché i due si svegliano insieme e agiscono con un solo passo condiviso. Possono puntarsi a vicenda: se il bersaglio è ancora un Copione non copiano nulla e restano Copioni, potendo riprovare la notte successiva. La copia si risolve sui ruoli di inizio alba, così l'ordine dei passi non cambia l'esito.
 8. **Gufo**: il suo bersaglio finisce al ballottaggio del giorno successivo. Il ballottaggio avviene tra il giocatore votato e i giocatori segnati dal Gufo, non solo tra i gufati.
 9. **Cacciatore**: dopo aver piazzato una trappola, la notte successiva non può piazzarne un'altra (`TrappolaInCooldown`).
 10. **Sfigato**: appare CATTIVO alle indagini (Veggente/Becchino), ma non è un Lupo e non conta per la vittoria del branco.
 11. **Annullatore**: blocca il potere del bersaglio per la notte. I Lupi sono immuni se ci sono più lupi vivi (branco).
-12. **Imputato**: copia i poteri di chi lo ha puntato quella notte e li usa subito. I passi dell'Imputato vengono generati solo dopo i passi con priorità inferiore a 10. Se copia il Lupo, il suo attacco può colpire anche un Lupo vero (il branco invece non può).
+12. **Imputato**: copia i poteri di chi lo ha puntato quella notte e li usa subito. Se ci sono più Imputati vivi usano insieme **l'unione** dei poteri copiati da ciascuno: ogni potere genera un solo passo condiviso con tutti gli Imputati come attori. I passi dell'Imputato vengono generati solo dopo i passi con priorità inferiore a 10. Se copia il Lupo, il suo attacco può colpire anche un Lupo vero (il branco invece non può).
 13. **Vittoria**: Buoni se non restano lupi; Lupi se `lupi >= altri vivi`; Pareggio se non resta nessuno; Diavolo se sbranato e votato nello stesso turno.
 14. **Ruoli morti**: ogni ruolo notturno viene chiamato anche se il suo attore è morto. Il passo è un segnaposto già completato che non produce azioni, così i vivi non possono dedurre quali personaggi sono caduti dal numero o dall'ordine delle chiamate. Il branco resta una chiamata unica: i lupi morti non alterano la chiamata del branco.
 15. **Pareggio al rogo**: se due o più giocatori hanno lo stesso numero massimo di voti si apre un secondo voto solo tra loro (più gli eventuali gufati vivi). Se anche il secondo voto è in parità nessuno va al rogo e si passa all'esecuzione vuota. Il narratore può in ogni caso forzare o saltare il rogo.
@@ -388,8 +397,11 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 - **Header sticky**: stanza, nome, fase/turno, chip del proprio ruolo, stato vivo/morto.
 - **Lobby**: posti e attesa, senza ruolo.
-- **Ruolo**: carta con icona, fazione, descrizione, capobranco, compagni di branco.
+- **Ruolo**: carta con icona, fazione, descrizione, capobranco, compagni di branco e, per
+  i doppioni, il riquadro **🎭 Doppione di X** (Copione) o **🎭 Il tuo ruolo ha un doppione**
+  (copiato, solo dalla notte successiva alla copia).
 - **Notte**: una card per ogni azione autorizzata, picker senza ruoli, risultato, conferma.
+  Se il passo è condiviso con altri attori, la card dice con chi ci si sveglia.
 - **Alba**: eventi pubblici, caduti (ruolo solo se rivelato), gufati.
 - **Giorno**: vivi, candidati e, se c'è almeno un AI vivo, la chat **La piazza**: log
   pubblico, menu "Tutti / Chiedi a <AI>", input e invio. I morti leggono ma non scrivono.
@@ -444,7 +456,7 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 
 ## 10. Test
 
-`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 26 scenari:
+`Lupus.Core.Tests/Program.cs` è un harness console senza framework. Copre 29 scenari:
 
 1. Protezione del Guardiano.
 2. Morte senza protezione.
@@ -457,21 +469,24 @@ Le priorità notturne sono in `Ruoli.Tutti` e guidano l'ordine dei passi.
 9. Copione che copia un ruolo.
 10. Copione che punta un altro Copione.
 11. Copione che punta un Copione già trasformato.
-12. Copione diventato Veggente: due Veggenti si svegliano insieme, ognuno col suo passo.
-13. Ruoli morti chiamati come segnaposto.
-14. Gufo e ballottaggio.
-15. Pareggio al rogo: secondo voto tra i più votati.
-16. Secondo voto in parità: nessuno al rogo.
-17. Narratore che salta il rogo dal voto.
-18. Imputato.
-19. Imputato che, copiato il Lupo, sbrana un Lupo.
-20. Capobranco scelto a caso tra i Lupi.
-21. Capobranco rimpiazzato a caso dopo la morte.
-22. Spia che non rivela il potere di chi ha puntato.
-23. Serializzazione.
-24. Validazione composizioni.
-25. Creazione con ruoli espliciti scelti dal narratore.
-26. Condizioni di vittoria.
+12. Copione diventato Veggente: un solo passo condiviso, i due puntano insieme e vedono lo stesso risultato.
+13. Copione diventato Guardiano: i due proteggono insieme la stessa persona.
+14. Copione 2: il doppione funziona allo stesso modo.
+15. Due Imputati usano insieme l'unione dei poteri copiati.
+16. Ruoli morti chiamati come segnaposto.
+17. Gufo e ballottaggio.
+18. Pareggio al rogo: secondo voto tra i più votati.
+19. Secondo voto in parità: nessuno al rogo.
+20. Narratore che salta il rogo dal voto.
+21. Imputato.
+22. Imputato che, copiato il Lupo, sbrana un Lupo.
+23. Capobranco scelto a caso tra i Lupi.
+24. Capobranco rimpiazzato a caso dopo la morte.
+25. Spia che non rivela il potere di chi ha puntato (e vede un solo lupo, il capobranco).
+26. Serializzazione.
+27. Validazione composizioni.
+28. Creazione con ruoli espliciti scelti dal narratore.
+29. Condizioni di vittoria.
 
 Quando cambi una regola, aggiungi o aggiorna uno scenario qui e lancia il comando di test.
 
@@ -558,8 +573,12 @@ Poi nel browser (narratore + almeno due schede giocatore):
 - Vota da due telefoni → il narratore vede il tally → "Chiudi il voto".
 - Nella scheda del voto la lista dei candidati contiene **tutti i vivi**, con "tu" sul proprio
   posto: si può votare chiunque, anche se stessi.
-- Copione che copia la Veggente: la notte successiva il narratore vede due passi
-  "🔮 Veggente · <nome>" e ogni Veggente ha il proprio risultato.
+- Copione che copia la Veggente: il Copione vede subito "Doppione di <nome>"; la Veggente
+  non vede nulla fino alla notte successiva, poi compare "Il tuo ruolo ha un doppione".
+  La notte dopo c'è **un** passo "🔮 Veggente · <nome1> e <nome2>" e i due hanno lo
+  stesso risultato.
+- Doppio Guardiano o doppio Cacciatore: un solo passo condiviso, un solo bersaglio.
+- Due Imputati puntati da ruoli diversi: usano insieme l'unione dei poteri copiati.
 - Pareggio al rogo → secondo voto tra i più votati; se resta il pareggio nessuno va al rogo.
 - "Salta il rogo" dal voto o dal ballottaggio → esecuzione vuota e "Cala la notte".
 - Ballottaggio del Gufo → candidati e rogo.

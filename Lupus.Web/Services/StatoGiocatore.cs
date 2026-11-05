@@ -32,6 +32,26 @@ public sealed class StatoGiocatore
     public IReadOnlyList<GiocatorePubblico> CandidatiGufo { get; init; } = Array.Empty<GiocatorePubblico>();
     public IReadOnlyList<string> CompagniBranco { get; init; } = Array.Empty<string>();
 
+    /// <summary>
+    /// Per un Copione trasformato: il nome di chi gli ha prestato il ruolo.
+    /// Lo sa sempre, dal momento della copia, come i lupi conoscono il branco.
+    /// </summary>
+    public string? CopiaDaNome { get; init; }
+
+    /// <summary>
+    /// Per il copiato: i Copioni che hanno preso il suo ruolo. La lista resta
+    /// vuota il primo giorno e compare dalla notte successiva, quando i due
+    /// si svegliano insieme.
+    /// </summary>
+    public IReadOnlyList<string> CopiatoDaNomi { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Il ruolo attuale agisce di notte: serve a scrivere "vi sveglierete
+    /// insieme" solo quando è vero (un Copione che copia un Contadino non ha
+    /// nessun passo notturno da condividere).
+    /// </summary>
+    public bool RuoloAgisceDiNotte { get; init; }
+
     public IReadOnlyList<AzioneGiocatore> Azioni { get; init; } = Array.Empty<AzioneGiocatore>();
     public IReadOnlyList<string> EventiAlba { get; init; } = Array.Empty<string>();
 
@@ -81,7 +101,8 @@ public sealed record AzioneGiocatore(
     string? Risultato,
     IReadOnlyList<GiocatorePubblico> Opzioni,
     bool PuoAgire,
-    Potere Potere);
+    Potere Potere,
+    IReadOnlyList<string> CompagniPasso);
 
 public sealed record ConteggioVoto(string Id, string Nome, int Voti, IReadOnlyList<string> Elettori);
 
@@ -187,6 +208,28 @@ public static class StatoGiocatoreFactory
                 .ToList()
             : new List<string>();
 
+        // Il Copione sa sempre di chi ha copiato il ruolo. Il copiato scopre
+        // il doppione solo dalla notte successiva: durante il primo giorno la
+        // copia resta segreta, poi i due si svegliano insieme.
+        var copiaDa = avviata && giocatore.CopiaDaId is { } copiatoId
+            ? p.NomeDi(copiatoId)
+            : null;
+        if (copiaDa == "?") copiaDa = null;
+
+        var copiatoDaNomi = avviata
+            ? giocatore.CopieSubite
+                // Il copiato scopre il doppione solo dalla notte successiva,
+                // quando si svegliano insieme: se nel frattempo il Copione è
+                // morto non c'è nessuna veglia condivisa da annunciare (e il
+                // suo ruolo resterebbe nascosto come quello degli altri morti).
+                .Where(c => finale || (p.Turno > c.Turno && p.Giocatore(c.CopioneId)?.Vivo == true))
+                .Select(c => p.NomeDi(c.CopioneId))
+                .Where(n => n != "?")
+                .Distinct()
+                .OrderBy(n => n)
+                .ToList()
+            : new List<string>();
+
         var azioni = new List<AzioneGiocatore>();
         if (avviata && giocatore.Vivo && p.Fase == FasePartita.Notte)
         {
@@ -202,6 +245,12 @@ public static class StatoGiocatoreFactory
                     .Select(Pub)
                     .ToList();
 
+                var compagniPasso = passo.ElencoAttori()
+                    .Where(id => id != giocatore.Id)
+                    .Select(id => p.NomeDi(id))
+                    .Where(n => n != "?")
+                    .ToList();
+
                 azioni.Add(new AzioneGiocatore(
                     passo.Id,
                     passo.Titolo,
@@ -213,7 +262,8 @@ public static class StatoGiocatoreFactory
                     passo.Risultato,
                     opzioni,
                     !passo.Completato && corrente?.Id == passo.Id,
-                    passo.Potere));
+                    passo.Potere,
+                    compagniPasso));
             }
         }
 
@@ -289,6 +339,9 @@ public static class StatoGiocatoreFactory
             MortiNotte = mortiNotte,
             CandidatiGufo = candidatiGufo,
             CompagniBranco = compagni,
+            CopiaDaNome = copiaDa,
+            CopiatoDaNomi = copiatoDaNomi,
+            RuoloAgisceDiNotte = avviata && Ruoli.Info(giocatore.Ruolo).AzioneNotturna,
             Azioni = azioni,
             EventiAlba = eventiAlba,
             Chat = chat,
@@ -368,7 +421,9 @@ public static class StatoGiocatoreFactory
         if (passo.Potere == Potere.Lupo)
             return giocatore.Ruolo == Ruolo.Lupo;
 
-        return passo.AttoreId == giocatore.Id;
+        // Con i ruoli duplicati il passo appartiene a un gruppo: chiunque ne
+        // faccia parte può agire e vede il risultato condiviso.
+        return passo.ElencoAttori().Contains(giocatore.Id);
     }
 
     public static string IconaPasso(PassoNotte passo)

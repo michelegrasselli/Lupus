@@ -3157,6 +3157,15 @@ h1:focus {
     font-size: 0.85rem;
 }
 
+.copy-box {
+    border-color: rgba(183, 140, 232, 0.35);
+    background: rgba(183, 140, 232, 0.12);
+}
+
+.copy-box p {
+    color: #e2d4fb;
+}
+
 .spectator-banner {
     margin: 12px 0;
     padding: 12px 14px;

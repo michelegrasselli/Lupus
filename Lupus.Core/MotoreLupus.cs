@@ -74,27 +74,21 @@ public static class MotoreLupus
                         AggiungiPassoMorto(p, attore, info.Priorita);
                     break;
                 case Ruolo.Becchino:
-                    foreach (var attore in attori) AggiungiPassoBecchino(p, attore);
+                    AggiungiPassoBecchino(p, attori, info.Priorita);
                     break;
                 case Ruolo.Cacciatore:
-                    foreach (var attore in attori) AggiungiPassoCacciatore(p, attore);
+                    AggiungiPassoCacciatore(p, attori, info.Priorita);
                     break;
                 case Ruolo.Copione:
                 case Ruolo.Copione2:
-                    foreach (var attore in attori)
-                    {
-                        AggiungiPassoCopione(
-                            p,
-                            attore,
-                            info.Ruolo == Ruolo.Copione ? Potere.Copione : Potere.Copione2,
-                            info.Priorita);
-                    }
+                    AggiungiPassoCopione(
+                        p,
+                        attori,
+                        info.Ruolo == Ruolo.Copione ? Potere.Copione : Potere.Copione2,
+                        info.Priorita);
                     break;
                 default:
-                    foreach (var attore in attori)
-                    {
-                        AggiungiPassoAzione(p, attore, PoterePerRuolo(info.Ruolo), info.Priorita);
-                    }
+                    AggiungiPassoAzione(p, attori, PoterePerRuolo(info.Ruolo), info.Priorita);
                     break;
             }
         }
@@ -169,17 +163,32 @@ public static class MotoreLupus
             return EsitoPasso.Successo();
         }
 
-        var attore = p.Giocatore(passo.AttoreId);
-        if (attore == null)
-            return EsitoPasso.Fallito("Attore non trovato.");
+        // Con i ruoli duplicati un passo appartiene a più attori: si svegliano
+        // insieme e puntano un solo bersaglio, come il branco. Agisce il primo
+        // che non è stato annullato, ma l'azione vale per tutto il gruppo.
+        var gruppo = p.AttoriDelPasso(passo);
+        if (passo.Potere == Potere.Lupo && p.LupiVivi.Any())
+            gruppo = p.LupiVivi.ToList();
 
-        // Il branco agisce tramite il capobranco attuale, anche se è stato
-        // eletto dopo la creazione del passo.
+        Giocatore? attore;
         if (passo.Potere == Potere.Lupo)
         {
-            attore = p.Capobranco ?? attore;
-            passo.AttoreId = attore.Id;
+            // Il branco agisce tramite il capobranco attuale, anche se è stato
+            // eletto dopo la creazione del passo.
+            var capo = p.Capobranco ?? gruppo.FirstOrDefault();
+            attore = (capo != null && !IsBloccato(p, capo, Potere.Lupo))
+                ? capo
+                : gruppo.FirstOrDefault(g => g.Vivo && !IsBloccato(p, g, Potere.Lupo)) ?? capo;
+            if (attore != null) passo.AttoreId = attore.Id;
         }
+        else
+        {
+            attore = gruppo.FirstOrDefault(g => g.Vivo && !IsBloccato(p, g, passo.Potere))
+                     ?? gruppo.FirstOrDefault(g => g.Vivo);
+        }
+
+        if (attore == null)
+            return EsitoPasso.Fallito("Attore non trovato.");
 
         if (!attore.Vivo)
         {
@@ -207,14 +216,24 @@ public static class MotoreLupus
             return EsitoPasso.Successo();
         }
 
+        var attoriAzione = gruppo
+            .Where(g => g.Vivo && (g.Id == attore.Id || !IsBloccato(p, g, passo.Potere)))
+            .Select(g => g.Id)
+            .ToList();
+        if (attoriAzione.Count == 0) attoriAzione.Add(attore.Id);
+
+        var gruppoVivo = gruppo.Where(g => attoriAzione.Contains(g.Id)).ToList();
+        if (gruppoVivo.Count == 0) gruppoVivo.Add(attore);
+
         p.AzioniNotte.Add(new AzioneNotte
         {
             Potere = passo.Potere,
             AttoreId = attore.Id,
-            BersaglioId = bersaglio.Id
+            BersaglioId = bersaglio.Id,
+            AttoriIds = attoriAzione
         });
 
-        passo.Risultato = CalcolaRisultato(p, attore, bersaglio, passo.Potere);
+        passo.Risultato = CalcolaRisultato(p, attore, gruppoVivo, bersaglio, passo.Potere);
         passo.Completato = !passo.RichiedeConferma;
 
         // Il diario è solo del narratore: qui possiamo dire ciò che il
@@ -288,9 +307,12 @@ public static class MotoreLupus
                 }
                 else
                 {
-                    var imp = p.Giocatore(attacco.AttoreId);
-                    if (imp != null && !protetti.Contains(imp.Id))
+                    // Se più Imputati hanno copiato il Lupo, il loro attacco
+                    // è unico: la trappola coglie tutti quelli che vi hanno
+                    // partecipato.
+                    foreach (var imp in p.AttoriDellAzione(attacco))
                     {
+                        if (!imp.Vivo || protetti.Contains(imp.Id)) continue;
                         morti.Add(imp.Id);
                         cause[imp.Id] = "è caduto nella trappola del Cacciatore";
                     }
@@ -329,11 +351,15 @@ public static class MotoreLupus
             var bersaglio = p.Giocatore(azione.BersaglioId);
             if (bersaglio?.Ruolo != Ruolo.Lupo) continue;
 
-            var attore = p.Giocatore(azione.AttoreId);
-            if (attore == null || !attore.Vivo || protetti.Contains(attore.Id)) continue;
+            // Se due Puttane passano la notte insieme allo stesso Lupo,
+            // condividono anche il destino: muoiono entrambe.
+            foreach (var attore in p.AttoriDellAzione(azione))
+            {
+                if (!attore.Vivo || protetti.Contains(attore.Id)) continue;
 
-            morti.Add(attore.Id);
-            cause[attore.Id] = "è morto dopo aver passato la notte con un Lupo";
+                morti.Add(attore.Id);
+                cause[attore.Id] = "è morto dopo aver passato la notte con un Lupo";
+            }
         }
 
         // --- Applica i decessi ---
@@ -378,29 +404,50 @@ public static class MotoreLupus
 
         foreach (var azione in azioni.Where(a => a.Potere is Potere.Copione or Potere.Copione2))
         {
-            var attore = p.Giocatore(azione.AttoreId);
             var bersaglio = p.Giocatore(azione.BersaglioId);
-            if (attore == null || !attore.Vivo || bersaglio == null) continue;
+            if (bersaglio == null) continue;
 
             var ruoloCopiato = ruoliPrimaDellAlba.GetValueOrDefault(bersaglio.Id, bersaglio.Ruolo);
 
-            if (ruoloCopiato is Ruolo.Copione or Ruolo.Copione2)
+            foreach (var attore in p.AttoriDellAzione(azione))
             {
-                p.AggiungiLog(
-                    $"{attore.Nome} ha puntato {bersaglio.Nome}, che è ancora un Copione: resta un Copione.",
-                    TipoLog.Trasformazione);
-                continue;
+                if (!attore.Vivo) continue;
+
+                if (ruoloCopiato is Ruolo.Copione or Ruolo.Copione2)
+                {
+                    p.AggiungiLog(
+                        $"{attore.Nome} ha puntato {bersaglio.Nome}, che è ancora un Copione: resta un Copione.",
+                        TipoLog.Trasformazione);
+                    continue;
+                }
+
+                attore.RuoloIniziale ??= attore.Ruolo;
+                attore.Ruolo = ruoloCopiato;
+                attore.Trasformato = true;
+                attore.Capobranco = false;
+
+                // Il Copione sa sempre di chi ha copiato il ruolo. Il copiato
+                // non lo scopre subito: la sua vista mostra i doppioni solo
+                // dalla notte successiva, quando si sveglia insieme a lui.
+                attore.CopiaDaId = bersaglio.Id;
+                attore.CopiaTurno = p.Turno;
+                if (!bersaglio.CopieSubite.Any(c => c.CopioneId == attore.Id))
+                {
+                    bersaglio.CopieSubite.Add(new CopiaRuolo
+                    {
+                        CopioneId = attore.Id,
+                        Turno = p.Turno
+                    });
+                }
+
+                risultato.TrasformatiIds.Add(attore.Id);
+
+                var testo =
+                    $"{attore.Nome} ha copiato il ruolo di {bersaglio.Nome}: " +
+                    $"ora è {Ruoli.Nome(ruoloCopiato)} e ne è il doppione.";
+                p.AggiungiLog(testo, TipoLog.Trasformazione);
+                p.AggiungiEvento(risultato, testo, true);
             }
-
-            attore.RuoloIniziale ??= attore.Ruolo;
-            attore.Ruolo = ruoloCopiato;
-            attore.Trasformato = true;
-            attore.Capobranco = false;
-            risultato.TrasformatiIds.Add(attore.Id);
-
-            var testo = $"{attore.Nome} ha copiato il ruolo di {bersaglio.Nome}: ora è {Ruoli.Nome(ruoloCopiato)}.";
-            p.AggiungiLog(testo, TipoLog.Trasformazione);
-            p.AggiungiEvento(risultato, testo, true);
         }
 
         if (risultato.MortiIds.Count == 0)
@@ -635,6 +682,8 @@ public static class MotoreLupus
         var capo = p.Capobranco ?? p.LupiVivi.FirstOrDefault();
         if (capo == null) return;
 
+        var lupi = p.LupiVivi.ToList();
+
         var opzioni = p.Vivi
             .Where(g => g.Ruolo != Ruolo.Lupo)
             .Select(g => g.Id)
@@ -643,7 +692,8 @@ public static class MotoreLupus
         if (opzioni.Count == 0)
         {
             p.PassiNotte.Add(PassoCompletato(
-                p, capo, Potere.Lupo, 3, "🐺 Il branco dei lupi",
+                p, lupi.Count > 0 ? lupi : new List<Giocatore> { capo },
+                Potere.Lupo, 3, "🐺 Il branco dei lupi",
                 "Nessun bersaglio valido: tutti i superstiti sono Lupi.", TipoLog.Info));
             return;
         }
@@ -653,6 +703,7 @@ public static class MotoreLupus
             Tipo = TipoPasso.Azione,
             Potere = Potere.Lupo,
             AttoreId = capo.Id,
+            AttoriIds = lupi.Select(g => g.Id).ToList(),
             Priorita = 3,
             Titolo = "🐺 Il branco dei lupi",
             Istruzione = "Chi verrà mangiato stanotte? Scegli un giocatore non lupo.",
@@ -660,21 +711,25 @@ public static class MotoreLupus
         });
     }
 
-    private static void AggiungiPassoAzione(Partita p, Giocatore attore, Potere potere, int priorita)
+    private static void AggiungiPassoAzione(
+        Partita p,
+        IReadOnlyList<Giocatore> attori,
+        Potere potere,
+        int priorita)
     {
-        if (!attore.Vivo)
-        {
-            AggiungiPassoMorto(p, attore, priorita);
-            return;
-        }
+        var vivi = attori.Where(a => a.Vivo).ToList();
+        foreach (var morto in attori.Where(a => !a.Vivo))
+            AggiungiPassoMorto(p, morto, priorita);
 
-        var opzioni = OpzioniPerPotere(p, attore, potere);
-        var titolo = $"{Ruoli.Info(attore.Ruolo).Icona} {Ruoli.Nome(attore.Ruolo)} · {attore.Nome}";
+        if (vivi.Count == 0) return;
+
+        var opzioni = OpzioniPerPotere(p, vivi, potere);
+        var titolo = TitoloPasso(vivi);
 
         if (opzioni.Count == 0)
         {
             p.PassiNotte.Add(PassoCompletato(
-                p, attore, potere, priorita, titolo,
+                p, vivi, potere, priorita, titolo,
                 "Nessun bersaglio valido per questa notte.", TipoLog.Info));
             return;
         }
@@ -683,7 +738,8 @@ public static class MotoreLupus
         {
             Tipo = TipoPasso.Azione,
             Potere = potere,
-            AttoreId = attore.Id,
+            AttoreId = vivi[0].Id,
+            AttoriIds = vivi.Select(a => a.Id).ToList(),
             Priorita = priorita,
             Titolo = titolo,
             Istruzione = DescrizionePotere(potere),
@@ -692,22 +748,25 @@ public static class MotoreLupus
         });
     }
 
-    private static void AggiungiPassoBecchino(Partita p, Giocatore attore)
+    private static void AggiungiPassoBecchino(
+        Partita p,
+        IReadOnlyList<Giocatore> attori,
+        int priorita)
     {
-        if (!attore.Vivo)
-        {
-            AggiungiPassoMorto(p, attore, 6);
-            return;
-        }
+        var vivi = attori.Where(a => a.Vivo).ToList();
+        foreach (var morto in attori.Where(a => !a.Vivo))
+            AggiungiPassoMorto(p, morto, priorita);
 
-        var opzioni = OpzioniPerPotere(p, attore, Potere.Becchino);
-        var titolo = $"⚰️ Becchino · {attore.Nome}";
+        if (vivi.Count == 0) return;
+
+        var opzioni = OpzioniPerPotere(p, vivi, Potere.Becchino);
+        var titolo = TitoloPasso(vivi);
 
         if (opzioni.Count == 0)
         {
             p.PassiNotte.Add(PassoCompletato(
-                p, attore, Potere.Becchino, 6, titolo,
-                "Non ci sono ancora morti di cui puoi sapere...", TipoLog.Info));
+                p, vivi, Potere.Becchino, priorita, titolo,
+                "Non ci sono ancora morti di cui possiate sapere...", TipoLog.Info));
             return;
         }
 
@@ -715,8 +774,9 @@ public static class MotoreLupus
         {
             Tipo = TipoPasso.Azione,
             Potere = Potere.Becchino,
-            AttoreId = attore.Id,
-            Priorita = 6,
+            AttoreId = vivi[0].Id,
+            AttoriIds = vivi.Select(a => a.Id).ToList(),
+            Priorita = priorita,
             Titolo = titolo,
             Istruzione = DescrizionePotere(Potere.Becchino),
             OpzioniIds = opzioni,
@@ -724,43 +784,50 @@ public static class MotoreLupus
         });
     }
 
-    private static void AggiungiPassoCacciatore(Partita p, Giocatore attore)
+    private static void AggiungiPassoCacciatore(
+        Partita p,
+        IReadOnlyList<Giocatore> attori,
+        int priorita)
     {
-        if (!attore.Vivo)
-        {
-            AggiungiPassoMorto(p, attore, 2);
-            return;
-        }
+        var vivi = attori.Where(a => a.Vivo).ToList();
+        foreach (var morto in attori.Where(a => !a.Vivo))
+            AggiungiPassoMorto(p, morto, priorita);
 
-        var titolo = $"🪤 Cacciatore · {attore.Nome}";
+        if (vivi.Count == 0) return;
 
-        if (attore.TrappolaInCooldown)
+        // I doppioni condividono la trappola: se uno l'ha piazzata la scorsa
+        // notte, stanotte riposano insieme.
+        if (vivi.Any(a => a.TrappolaInCooldown))
         {
-            attore.TrappolaInCooldown = false;
+            foreach (var a in vivi) a.TrappolaInCooldown = false;
             p.PassiNotte.Add(PassoCompletato(
-                p, attore, Potere.Cacciatore, 2, titolo,
-                "Hai già piazzato una trappola la scorsa notte: stanotte riposi.", TipoLog.Info));
+                p, vivi, Potere.Cacciatore, priorita, TitoloPasso(vivi),
+                "Avete già piazzato una trappola la scorsa notte: stanotte riposate.", TipoLog.Info));
             return;
         }
 
-        AggiungiPassoAzione(p, attore, Potere.Cacciatore, 2);
+        AggiungiPassoAzione(p, vivi, Potere.Cacciatore, priorita);
     }
 
-    private static void AggiungiPassoCopione(Partita p, Giocatore attore, Potere potere, int priorita)
+    private static void AggiungiPassoCopione(
+        Partita p,
+        IReadOnlyList<Giocatore> attori,
+        Potere potere,
+        int priorita)
     {
-        if (!attore.Vivo)
-        {
-            AggiungiPassoMorto(p, attore, priorita);
-            return;
-        }
+        var vivi = attori.Where(a => a.Vivo).ToList();
+        foreach (var morto in attori.Where(a => !a.Vivo))
+            AggiungiPassoMorto(p, morto, priorita);
 
-        var opzioni = OpzioniPerPotere(p, attore, potere);
-        var titolo = $"🎭 {Ruoli.Nome(attore.Ruolo)} · {attore.Nome}";
+        if (vivi.Count == 0) return;
+
+        var opzioni = OpzioniPerPotere(p, vivi, potere);
+        var titolo = TitoloPasso(vivi);
 
         if (opzioni.Count == 0)
         {
             p.PassiNotte.Add(PassoCompletato(
-                p, attore, potere, priorita, titolo,
+                p, vivi, potere, priorita, titolo,
                 "Nessun giocatore valido da copiare.", TipoLog.Info));
             return;
         }
@@ -769,7 +836,8 @@ public static class MotoreLupus
         {
             Tipo = TipoPasso.Azione,
             Potere = potere,
-            AttoreId = attore.Id,
+            AttoreId = vivi[0].Id,
+            AttoriIds = vivi.Select(a => a.Id).ToList(),
             Priorita = priorita,
             Titolo = titolo,
             Istruzione = DescrizionePotere(potere),
@@ -792,47 +860,64 @@ public static class MotoreLupus
 
         var nuovi = new List<PassoNotte>();
 
-        foreach (var imp in imputati)
+        // I doppioni agiscono insieme: l'unione dei poteri copiati da
+        // ciascuno viene usata da tutto il gruppo.
+        var attivi = imputati
+            .Where(imp => !IsBloccato(p, imp, Potere.ImputatoLupo))
+            .ToList();
+
+        if (attivi.Count == 0)
         {
-            if (IsBloccato(p, imp, Potere.ImputatoLupo))
+            nuovi.Add(PassoCompletato(
+                p, imputati, Potere.Nessuno, 10,
+                $"⚖️ Imputato · {NomiGiocatori(imputati)}",
+                $"{NomiGiocatori(imputati)} annullati: nessun potere copiato.", TipoLog.Potere));
+        }
+        else
+        {
+            var poteri = new List<Potere>();
+            foreach (var imp in attivi)
             {
-                nuovi.Add(PassoCompletato(
-                    p, imp, Potere.Nessuno, 10, $"⚖️ Imputato · {imp.Nome}",
-                    $"{imp.Nome} è stato annullato: nessun potere copiato.", TipoLog.Potere));
-                continue;
+                foreach (var potere in PoteriCopiati(p, imp))
+                {
+                    if (!poteri.Contains(potere)) poteri.Add(potere);
+                }
             }
 
-            var poteri = PoteriCopiati(p, imp);
+            var titolo = $"⚖️ Imputato · {NomiGiocatori(attivi)}";
+
             if (poteri.Count == 0)
             {
                 nuovi.Add(PassoCompletato(
-                    p, imp, Potere.Nessuno, 10, $"⚖️ Imputato · {imp.Nome}",
-                    $"{imp.Nome} non ha poteri da usare stanotte.", TipoLog.Info));
-                continue;
+                    p, attivi, Potere.Nessuno, 10, titolo,
+                    $"{NomiGiocatori(attivi)} non hanno poteri da usare stanotte.", TipoLog.Info));
             }
-
-            foreach (var potere in poteri)
+            else
             {
-                var opzioni = OpzioniPerPotere(p, imp, potere);
-                if (opzioni.Count == 0)
+                foreach (var potere in poteri)
                 {
-                    nuovi.Add(PassoCompletato(
-                        p, imp, potere, 10, $"⚖️ Imputato · {imp.Nome}",
-                        $"Nessun bersaglio valido per {EtichettaPotere(potere)}.", TipoLog.Info));
-                    continue;
-                }
+                    var opzioni = OpzioniPerPotere(p, attivi, potere);
+                    if (opzioni.Count == 0)
+                    {
+                        nuovi.Add(PassoCompletato(
+                            p, attivi, potere, 10, titolo,
+                            $"Nessun bersaglio valido per {EtichettaPotere(potere)}.", TipoLog.Info));
+                        continue;
+                    }
 
-                nuovi.Add(new PassoNotte
-                {
-                    Tipo = TipoPasso.Azione,
-                    Potere = potere,
-                    AttoreId = imp.Id,
-                    Priorita = 10,
-                    Titolo = $"⚖️ Imputato · {imp.Nome}",
-                    Istruzione = DescrizionePotere(potere),
-                    OpzioniIds = opzioni,
-                    RichiedeConferma = RichiedeConferma(potere)
-                });
+                    nuovi.Add(new PassoNotte
+                    {
+                        Tipo = TipoPasso.Azione,
+                        Potere = potere,
+                        AttoreId = attivi[0].Id,
+                        AttoriIds = attivi.Select(a => a.Id).ToList(),
+                        Priorita = 10,
+                        Titolo = titolo,
+                        Istruzione = DescrizionePotere(potere),
+                        OpzioniIds = opzioni,
+                        RichiedeConferma = RichiedeConferma(potere)
+                    });
+                }
             }
         }
 
@@ -862,6 +947,12 @@ public static class MotoreLupus
 
     private static PassoNotte PassoCompletato(
         Partita p, Giocatore attore, Potere potere, int priorita,
+        string titolo, string risultato, TipoLog tipo) =>
+        PassoCompletato(
+            p, new List<Giocatore> { attore }, potere, priorita, titolo, risultato, tipo);
+
+    private static PassoNotte PassoCompletato(
+        Partita p, IReadOnlyList<Giocatore> attori, Potere potere, int priorita,
         string titolo, string risultato, TipoLog tipo)
     {
         p.AggiungiLog(risultato, tipo);
@@ -870,7 +961,8 @@ public static class MotoreLupus
         {
             Tipo = TipoPasso.Azione,
             Potere = potere,
-            AttoreId = attore.Id,
+            AttoreId = attori[0].Id,
+            AttoriIds = attori.Select(a => a.Id).ToList(),
             Priorita = priorita,
             Titolo = titolo,
             Completato = true,
@@ -878,6 +970,18 @@ public static class MotoreLupus
             Risultato = risultato
         };
     }
+
+    private static string TitoloPasso(IReadOnlyList<Giocatore> attori) =>
+        $"{Ruoli.Info(attori[0].Ruolo).Icona} {Ruoli.Nome(attori[0].Ruolo)} · {NomiGiocatori(attori)}";
+
+    private static string NomiGiocatori(IReadOnlyList<Giocatore> attori) => attori.Count switch
+    {
+        0 => "",
+        1 => attori[0].Nome,
+        2 => $"{attori[0].Nome} e {attori[1].Nome}",
+        _ => string.Join(", ", attori.Take(attori.Count - 1).Select(a => a.Nome))
+             + $" e {attori[^1].Nome}"
+    };
 
     // ---------------------------------------------------------------------
     // Regole e testi
@@ -918,8 +1022,16 @@ public static class MotoreLupus
         return poteri;
     }
 
-    private static string CalcolaRisultato(Partita p, Giocatore attore, Giocatore bersaglio, Potere potere)
+    private static string CalcolaRisultato(
+        Partita p,
+        Giocatore attore,
+        IReadOnlyList<Giocatore> gruppo,
+        Giocatore bersaglio,
+        Potere potere)
     {
+        var plurale = gruppo.Count > 1;
+        var soggetto = plurale ? NomiGiocatori(gruppo) : attore.Nome;
+
         switch (potere)
         {
             case Potere.Lupo:
@@ -929,11 +1041,15 @@ public static class MotoreLupus
                 return $"{bersaglio.Nome} non potrà usare il suo potere stanotte.";
 
             case Potere.Guardiano:
-                return $"{bersaglio.Nome} sarà protetto stanotte.";
+                return plurale
+                    ? $"{soggetto} proteggeranno {bersaglio.Nome} stanotte."
+                    : $"{bersaglio.Nome} sarà protetto stanotte.";
 
             case Potere.Cacciatore:
-                attore.TrappolaInCooldown = true;
-                return $"Trappola piazzata su {bersaglio.Nome}. La prossima notte non potrai piazzarne un'altra.";
+                foreach (var a in gruppo) a.TrappolaInCooldown = true;
+                return plurale
+                    ? $"Trappola piazzata su {bersaglio.Nome}. La prossima notte non potrete piazzarne un'altra."
+                    : $"Trappola piazzata su {bersaglio.Nome}. La prossima notte non potrai piazzarne un'altra.";
 
             case Potere.Gufo:
                 return $"{bersaglio.Nome} andrà al ballottaggio del prossimo giorno.";
@@ -941,7 +1057,9 @@ public static class MotoreLupus
             case Potere.Puttana:
                 // La Puttana non deve sapere se ha scelto un Lupo: lo scopre
                 // solo all'alba, quando eventualmente muore.
-                return $"{attore.Nome} passerà la notte con {bersaglio.Nome}.";
+                return plurale
+                    ? $"{soggetto} passeranno la notte con {bersaglio.Nome}."
+                    : $"{attore.Nome} passerà la notte con {bersaglio.Nome}.";
 
             case Potere.Veggente:
             case Potere.ImputatoVeggente:
@@ -960,23 +1078,31 @@ public static class MotoreLupus
                 // resta Copioni, potendo riprovare la notte successiva.
                 if (bersaglio.Ruolo is Ruolo.Copione or Ruolo.Copione2)
                     return $"{bersaglio.Nome} è ancora un Copione: resterai un Copione.";
-                return $"Dalla prossima notte {attore.Nome} sarà {Ruoli.Nome(bersaglio.Ruolo)}.";
+                return plurale
+                    ? $"Dalla prossima notte {soggetto} saranno {Ruoli.Nome(bersaglio.Ruolo)} e ne saranno i doppioni."
+                    : $"Dalla prossima notte {attore.Nome} sarà {Ruoli.Nome(bersaglio.Ruolo)} e ne diventerà il doppione.";
 
             case Potere.ImputatoLupo:
-                return $"Tramite il potere copiato del Lupo, {attore.Nome} ha scelto {bersaglio.Nome}.";
+                return plurale
+                    ? $"Tramite il potere copiato del Lupo, {soggetto} hanno scelto {bersaglio.Nome}."
+                    : $"Tramite il potere copiato del Lupo, {attore.Nome} ha scelto {bersaglio.Nome}.";
 
             case Potere.ImputatoGuardiano:
-                return $"{bersaglio.Nome} sarà protetto stanotte (potere copiato).";
+                return plurale
+                    ? $"{soggetto} proteggeranno {bersaglio.Nome} stanotte (potere copiato)."
+                    : $"{bersaglio.Nome} sarà protetto stanotte (potere copiato).";
 
             case Potere.ImputatoCacciatore:
-                attore.TrappolaInCooldown = true;
+                foreach (var a in gruppo) a.TrappolaInCooldown = true;
                 return $"Trappola copiata piazzata su {bersaglio.Nome}.";
 
             case Potere.ImputatoGufo:
                 return $"{bersaglio.Nome} andrà al ballottaggio del prossimo giorno (potere copiato).";
 
             case Potere.ImputatoPuttana:
-                return $"{attore.Nome} passerà la notte con {bersaglio.Nome} (potere copiato).";
+                return plurale
+                    ? $"{soggetto} passeranno la notte con {bersaglio.Nome} (potere copiato)."
+                    : $"{attore.Nome} passerà la notte con {bersaglio.Nome} (potere copiato).";
 
             default:
                 return "";
@@ -1003,8 +1129,8 @@ public static class MotoreLupus
     {
         var azioni = p.AzioniNotte
             .Where(a => a.BersaglioId == bersaglio.Id)
-            .Where(a => !(a.AttoreId == attore.Id &&
-                          (a.Potere == Potere.Spia || a.Potere == Potere.ImputatoSpia)))
+            .Where(a => !((a.Potere == Potere.Spia || a.Potere == Potere.ImputatoSpia) &&
+                          a.ElencoAttori().Contains(attore.Id)))
             .ToList();
 
         if (azioni.Count == 0)
@@ -1012,9 +1138,14 @@ public static class MotoreLupus
 
         // La Spia scopre solo CHI ha puntato il bersaglio, non con quale
         // potere: aggiungere il ruolo dell'attore le regalerebbe un'informazione
-        // che il suo potere non prevede.
+        // che il suo potere non prevede. Con i ruoli duplicati il bersaglio
+        // risulta puntato da tutto il gruppo che ha agito insieme, tranne il
+        // branco: l'attacco dei lupi resta una voce sola (il capobranco),
+        // altrimenti una sola indagine smaschererebbe tutti i lupi.
         var righe = azioni
-            .Select(a => p.Giocatore(a.AttoreId)?.Nome ?? "?")
+            .SelectMany(a => a.Potere == Potere.Lupo
+                ? new[] { p.Capobranco?.Nome ?? p.NomeDi(a.AttoreId) }
+                : p.AttoriDellAzione(a).Select(g => g.Nome))
             .Distinct()
             .ToList();
 
@@ -1046,24 +1177,37 @@ public static class MotoreLupus
         Potere.ImputatoVeggente or Potere.ImputatoSpia or
         Potere.ImputatoPuttana or Potere.Puttana;
 
-    public static List<string> OpzioniPerPotere(Partita p, Giocatore attore, Potere potere)
+    public static List<string> OpzioniPerPotere(Partita p, Giocatore attore, Potere potere) =>
+        OpzioniPerPotere(p, new List<Giocatore> { attore }, potere);
+
+    /// <summary>
+    /// Bersagli validi per un gruppo di attori che agiscono insieme. I poteri
+    /// che normalmente non permettono di puntare se stessi escludono tutti i
+    /// membri del gruppo, così nessun doppione finisce nella lista.
+    /// </summary>
+    public static List<string> OpzioniPerPotere(
+        Partita p,
+        IReadOnlyList<Giocatore> attori,
+        Potere potere)
     {
+        var esclusi = attori.Select(a => a.Id).ToHashSet();
+
         return potere switch
         {
             Potere.Lupo =>
-                p.Vivi.Where(g => g.Ruolo != Ruolo.Lupo && g.Id != attore.Id)
+                p.Vivi.Where(g => g.Ruolo != Ruolo.Lupo && !esclusi.Contains(g.Id))
                     .Select(g => g.Id).ToList(),
 
             // L'Imputato non fa parte del branco: il potere copiato è un attacco
             // solitario e può colpire anche un Lupo, che muore come chiunque altro.
             Potere.ImputatoLupo =>
-                p.Vivi.Where(g => g.Id != attore.Id).Select(g => g.Id).ToList(),
+                p.Vivi.Where(g => !esclusi.Contains(g.Id)).Select(g => g.Id).ToList(),
 
             Potere.Becchino =>
                 p.Giocatori.Where(g => !g.Vivo).Select(g => g.Id).ToList(),
 
             Potere.Annullatore =>
-                p.Vivi.Where(g => g.Id != attore.Id).Select(g => g.Id).ToList(),
+                p.Vivi.Where(g => !esclusi.Contains(g.Id)).Select(g => g.Id).ToList(),
 
             Potere.Cacciatore or Potere.ImputatoCacciatore =>
                 p.Vivi.Select(g => g.Id).ToList(),
@@ -1072,19 +1216,19 @@ public static class MotoreLupus
                 p.Vivi.Select(g => g.Id).ToList(),
 
             Potere.Gufo or Potere.ImputatoGufo =>
-                p.Vivi.Where(g => g.Id != attore.Id).Select(g => g.Id).ToList(),
+                p.Vivi.Where(g => !esclusi.Contains(g.Id)).Select(g => g.Id).ToList(),
 
             Potere.Puttana or Potere.ImputatoPuttana =>
-                p.Vivi.Where(g => g.Id != attore.Id).Select(g => g.Id).ToList(),
+                p.Vivi.Where(g => !esclusi.Contains(g.Id)).Select(g => g.Id).ToList(),
 
             Potere.Veggente or Potere.ImputatoVeggente =>
-                p.Vivi.Where(g => g.Id != attore.Id).Select(g => g.Id).ToList(),
+                p.Vivi.Where(g => !esclusi.Contains(g.Id)).Select(g => g.Id).ToList(),
 
             Potere.Spia or Potere.ImputatoSpia =>
                 p.Vivi.Select(g => g.Id).ToList(),
 
             Potere.Copione or Potere.Copione2 =>
-                p.Vivi.Where(g => g.Id != attore.Id)
+                p.Vivi.Where(g => !esclusi.Contains(g.Id))
                     .Select(g => g.Id).ToList(),
 
             _ => new List<string>()

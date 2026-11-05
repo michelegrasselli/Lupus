@@ -75,6 +75,17 @@ public sealed class AzioneNotte
     public Potere Potere { get; set; }
     public string AttoreId { get; set; } = "";
     public string BersaglioId { get; set; } = "";
+
+    /// <summary>
+    /// Tutti i giocatori che hanno agito insieme (ruoli duplicati). Vuoto per
+    /// le azioni dei salvataggi vecchi e per i poteri con un solo attore.
+    /// </summary>
+    public List<string> AttoriIds { get; set; } = new();
+
+    public IReadOnlyList<string> ElencoAttori() =>
+        AttoriIds.Count > 0
+            ? AttoriIds
+            : (AttoreId.Length > 0 ? new[] { AttoreId } : Array.Empty<string>());
 }
 
 public sealed class PassoNotte
@@ -83,6 +94,20 @@ public sealed class PassoNotte
     public TipoPasso Tipo { get; set; } = TipoPasso.Azione;
     public Potere Potere { get; set; }
     public string? AttoreId { get; set; }
+
+    /// <summary>
+    /// Attori che condividono lo stesso passo: con due Guardiani (o un
+    /// Copione diventato Guardiano) si svegliano insieme e puntano un solo
+    /// bersaglio, come fa il branco. Se la lista è vuota vale il solo
+    /// <see cref="AttoreId"/> (compatibilità con i salvataggi vecchi).
+    /// </summary>
+    public List<string> AttoriIds { get; set; } = new();
+
+    public IReadOnlyList<string> ElencoAttori() =>
+        AttoriIds.Count > 0
+            ? AttoriIds
+            : (AttoreId is { Length: > 0 } id ? new[] { id } : Array.Empty<string>());
+
     public int Priorita { get; set; } = 1000;
     public string Titolo { get; set; } = "";
     public string Istruzione { get; set; } = "";

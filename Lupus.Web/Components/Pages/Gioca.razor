@@ -152,6 +152,48 @@ else
                             <p>@string.Join(", ", stato.CompagniBranco)</p>
                         </div>
                     }
+
+                    @if (!string.IsNullOrWhiteSpace(stato.CopiaDaNome))
+                    {
+                        <div class="pack-box copy-box">
+                            <strong>🎭 Doppione di @stato.CopiaDaNome</strong>
+                            @if (stato.RuoloAgisceDiNotte)
+                            {
+                                <p>
+                                    Hai copiato il suo ruolo: da ora avete lo stesso ruolo e vi svegliate
+                                    insieme, scegliendo un solo bersaglio.
+                                </p>
+                            }
+                            else
+                            {
+                                <p>
+                                    Hai copiato il suo ruolo: da ora avete lo stesso ruolo, ma stanotte
+                                    nessuno dei due ha un potere da usare.
+                                </p>
+                            }
+                        </div>
+                    }
+
+                    @if (stato.CopiatoDaNomi.Count > 0)
+                    {
+                        <div class="pack-box copy-box">
+                            <strong>🎭 Il tuo ruolo ha un doppione</strong>
+                            @if (stato.RuoloAgisceDiNotte)
+                            {
+                                <p>
+                                    @string.Join(", ", stato.CopiatoDaNomi) ha copiato il tuo ruolo:
+                                    stanotte vi svegliate insieme e scegliete insieme il bersaglio.
+                                </p>
+                            }
+                            else
+                            {
+                                <p>
+                                    @string.Join(", ", stato.CopiatoDaNomi) ha copiato il tuo ruolo:
+                                    da ora avete lo stesso ruolo, anche se stanotte non c'è nulla da fare.
+                                </p>
+                            }
+                        </div>
+                    }
                 </section>
             }
 
@@ -243,6 +285,14 @@ else
                                     </p>
                                     <h2>@azione.Titolo</h2>
                                     <p class="muted">@azione.Istruzione</p>
+                                    @if (azione.CompagniPasso.Count > 0 && azione.Potere != Potere.Lupo)
+                                    {
+                                        <p class="muted small action-target">
+                                            Vi svegliate insieme a
+                                            <strong>@string.Join(", ", azione.CompagniPasso)</strong>:
+                                            scegliete un solo bersaglio, come il branco.
+                                        </p>
+                                    }
                                 </div>
                             </div>
 
